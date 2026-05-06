@@ -3,3 +3,6 @@ dist
 coverage
 test/fixtures
 *.md
+pnpm-lock.yaml
+package-lock.json
+yarn.lock
