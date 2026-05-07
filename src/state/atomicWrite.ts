@@ -2,7 +2,7 @@ import { rename, writeFile, readdir, unlink } from "node:fs/promises";
 import { join } from "node:path";
 import { pid } from "node:process";
 
-function isErrnoCode(error: unknown, code: string): boolean {
+export function isErrnoCode(error: unknown, code: string): boolean {
   return (
     error instanceof Error && "code" in error && (error as NodeJS.ErrnoException).code === code
   );
