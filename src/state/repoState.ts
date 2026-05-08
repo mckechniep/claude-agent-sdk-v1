@@ -60,8 +60,6 @@ export async function ensureGitignore(repoPath: string): Promise<void> {
   }
   if (current.split("\n").some((l) => l.trim() === ".agent/" || l.trim() === ".agent")) return;
   const next =
-    current.endsWith("\n") || current === ""
-      ? current + ".agent/\n"
-      : current + "\n.agent/\n";
+    current.endsWith("\n") || current === "" ? current + ".agent/\n" : current + "\n.agent/\n";
   await writeFile(path, next);
 }

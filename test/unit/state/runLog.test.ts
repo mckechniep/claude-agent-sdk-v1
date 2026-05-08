@@ -16,7 +16,11 @@ describe("runLog", () => {
 
   it("appends events as JSONL", async () => {
     const path = join(dir, "run-log.jsonl");
-    const e1: LogEvent = { ts: "2026-05-04T00:00:00.000Z", type: "run_started", runId: "01HKQR3Z8MAAAAAAAAAAAAAAAA" };
+    const e1: LogEvent = {
+      ts: "2026-05-04T00:00:00.000Z",
+      type: "run_started",
+      runId: "01HKQR3Z8MAAAAAAAAAAAAAAAA",
+    };
     const e2: LogEvent = {
       ts: "2026-05-04T00:00:01.000Z",
       type: "phase_started",
@@ -31,7 +35,11 @@ describe("runLog", () => {
 
   it("reads back valid events and skips malformed lines", async () => {
     const path = join(dir, "run-log.jsonl");
-    const e1: LogEvent = { ts: "2026-05-04T00:00:00.000Z", type: "run_started", runId: "01HKQR3Z8MAAAAAAAAAAAAAAAA" };
+    const e1: LogEvent = {
+      ts: "2026-05-04T00:00:00.000Z",
+      type: "run_started",
+      runId: "01HKQR3Z8MAAAAAAAAAAAAAAAA",
+    };
     await appendLogEvent(path, e1);
     const { writeFile } = await import("node:fs/promises");
     await writeFile(path, (await readFile(path, "utf8")) + "{not json\n");

@@ -2,12 +2,7 @@ import { describe, expect, it, beforeEach, afterEach } from "vitest";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import {
-  createRunDir,
-  loadManifest,
-  saveManifest,
-  listRuns,
-} from "../../../src/state/runIndex.js";
+import { createRunDir, loadManifest, saveManifest, listRuns } from "../../../src/state/runIndex.js";
 import type { RunManifest } from "../../../src/types.js";
 import { SCHEMA_VERSION } from "../../../src/types.js";
 
