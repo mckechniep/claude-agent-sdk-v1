@@ -17,12 +17,18 @@ export interface QueryResult {
   durationMs: number;
 }
 
-type AsyncGeneratorFn = (args: unknown) => AsyncGenerator<{
+export interface SdkStreamMessage {
   type: string;
   message?: { content: Array<{ type: string; text?: string }> };
   result?: string;
   usage?: { input_tokens: number; output_tokens: number };
-}>;
+}
+
+export type QueryEvent =
+  | { type: "started"; ts: number }
+  | { type: "sdk_message"; message: SdkStreamMessage; ts: number };
+
+type AsyncGeneratorFn = (args: unknown) => AsyncGenerator<SdkStreamMessage>;
 
 let cachedSdkQuery: AsyncGeneratorFn | null = null;
 async function getDefaultQueryFn(): Promise<AsyncGeneratorFn> {
@@ -32,13 +38,17 @@ async function getDefaultQueryFn(): Promise<AsyncGeneratorFn> {
   return cachedSdkQuery;
 }
 
-export async function runQuery(params: QueryParams): Promise<QueryResult> {
+export async function* runQueryStream(
+  params: QueryParams,
+): AsyncGenerator<QueryEvent, QueryResult> {
   const queryFn = params.queryFn ?? (await getDefaultQueryFn());
   const startedAt = Date.now();
   const messages: unknown[] = [];
   let finalText = "";
   let inputTokens = 0;
   let outputTokens = 0;
+
+  yield { type: "started", ts: startedAt };
 
   const stream = queryFn({
     prompt: params.prompt,
@@ -52,6 +62,7 @@ export async function runQuery(params: QueryParams): Promise<QueryResult> {
 
   for await (const msg of stream) {
     messages.push(msg);
+    yield { type: "sdk_message", message: msg, ts: Date.now() };
     if (msg.type === "result") {
       finalText = msg.result ?? "";
       inputTokens = msg.usage?.input_tokens ?? 0;
@@ -69,4 +80,14 @@ export async function runQuery(params: QueryParams): Promise<QueryResult> {
     tokensUsed,
     durationMs: Date.now() - startedAt,
   };
+}
+
+export async function runQuery(params: QueryParams): Promise<QueryResult> {
+  const gen = runQueryStream(params);
+  // Drain the generator. We don't care about intermediate events here —
+  // streaming consumers use runQueryStream directly.
+  for (;;) {
+    const next = await gen.next();
+    if (next.done) return next.value;
+  }
 }
