@@ -20,9 +20,7 @@ export function resolveAuthMode(input: ResolveInput): ResolvedAuth | null {
 export function applyAuthMode(mode: AuthMode): void {
   if (mode === "api") {
     if (!process.env.ANTHROPIC_API_KEY) {
-      throw new Error(
-        "auth=api requires ANTHROPIC_API_KEY in env (or use --auth=subscription)",
-      );
+      throw new Error("auth=api requires ANTHROPIC_API_KEY in env (or use --auth=subscription)");
     }
     return;
   }
