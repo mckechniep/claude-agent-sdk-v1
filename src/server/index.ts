@@ -1,9 +1,10 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import {
   handleAuthStatus,
+  handleDiscoverStream,
   handleListRuns,
   handleSetAuthMode,
-  handleSmokeTest,
+  handleSmokeStream,
   type RouteResponse,
   type ServerDeps,
 } from "./routes.js";
@@ -69,9 +70,11 @@ async function route(req: IncomingMessage, res: ServerResponse, deps: ServerDeps
     if (method === "GET" && path === "/api/runs") {
       return send(res, await handleListRuns());
     }
-    if (method === "POST" && path === "/api/smoke") {
-      const body = await readJsonBody(req);
-      return send(res, await handleSmokeTest(body, deps));
+    if (method === "GET" && path === "/api/smoke/stream") {
+      return handleSmokeStream(req, res, deps, url.searchParams);
+    }
+    if (method === "GET" && path === "/api/discover/stream") {
+      return handleDiscoverStream(req, res, url.searchParams);
     }
     send(res, { status: 404, body: { error: "not found", path } });
   } catch (err) {
