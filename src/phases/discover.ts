@@ -110,7 +110,7 @@ async function walkForRepos(
   }
 }
 
-async function describeRepo(path: string): Promise<DiscoveredRepo> {
+export async function describeRepo(path: string): Promise<DiscoveredRepo> {
   const name = basename(path);
   const stack = await detectStack(path);
   const hasReadme = await fileExists(join(path, "README.md"));
