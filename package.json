@@ -1,5 +1,49 @@
 {
+  "name": "agent-orchestrator",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "bin": {
+    "agent": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/cli.ts",
+    "dev:server": "tsx src/server/index.ts",
+    "dev:ui": "concurrently -n server,vite -c blue,magenta \"pnpm dev:server\" \"pnpm --prefix ui dev\"",
+    "ui:install": "pnpm --prefix ui install",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:unit": "vitest run --dir test/unit",
+    "test:integration": "vitest run --dir test/integration",
+    "test:prompts": "vitest run --dir test/prompts",
+    "test:e2e": "RUN_E2E=1 vitest run --dir test/e2e",
+    "coverage": "vitest run --coverage"
+  },
   "dependencies": {
-    "@anthropic-ai/claude-agent-sdk": "0.2.118"
+    "@anthropic-ai/claude-agent-sdk": "^0.2.118",
+    "commander": "^12.1.0",
+    "simple-git": "^3.27.0",
+    "ulid": "^2.3.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.4",
+    "@types/node": "^22.9.0",
+    "@vitest/coverage-v8": "^2.1.4",
+    "concurrently": "9.2.1",
+    "eslint": "^9.14.0",
+    "memfs": "^4.14.0",
+    "prettier": "^3.3.3",
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3",
+    "typescript-eslint": "^8.13.0",
+    "vitest": "^2.1.4"
   }
 }
