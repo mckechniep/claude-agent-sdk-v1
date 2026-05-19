@@ -1,11 +1,14 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import {
   handleAnalyzeStream,
+  handleApprovePlan,
   handleApproveProposal,
   handleAuthStatus,
   handleDiscoverStream,
   handleGetApproval,
+  handleGetPlanApproval,
   handleListRuns,
+  handlePlanStream,
   handleSetAuthMode,
   handleSmokeStream,
   type RouteResponse,
@@ -88,6 +91,16 @@ async function route(req: IncomingMessage, res: ServerResponse, deps: ServerDeps
     }
     if (method === "GET" && path === "/api/analyze/approval") {
       return send(res, await handleGetApproval(url.searchParams));
+    }
+    if (method === "GET" && path === "/api/plan/stream") {
+      return handlePlanStream(req, res, deps, url.searchParams);
+    }
+    if (method === "POST" && path === "/api/plan/approve") {
+      const body = await readJsonBody(req);
+      return send(res, await handleApprovePlan(body));
+    }
+    if (method === "GET" && path === "/api/plan/approval") {
+      return send(res, await handleGetPlanApproval(url.searchParams));
     }
     send(res, { status: 404, body: { error: "not found", path } });
   } catch (err) {

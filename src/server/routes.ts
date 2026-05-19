@@ -9,8 +9,15 @@ import { runQueryStream } from "../sdk/query.js";
 import { listRuns, defaultStateRoot } from "../state/runIndex.js";
 import { describeRepo, discoverReposStream } from "../phases/discover.js";
 import { analyzeStream } from "../phases/analyze.js";
+import { planStream } from "../phases/plan.js";
 import { getStackProfile } from "../stack/detect.js";
-import { readProposalApproval, writeProposalApproval } from "../state/repoState.js";
+import {
+  readPlanApproval,
+  readProposal,
+  readProposalApproval,
+  writePlanApproval,
+  writeProposalApproval,
+} from "../state/repoState.js";
 import { detectAuth } from "./authDetect.js";
 import { loadUiConfig, setPreferredAuthMode } from "./config.js";
 import { openSseStream } from "./sse.js";
@@ -32,6 +39,18 @@ const AnalyzeQuery = z.object({
 const ApproveBody = z.object({
   repoPath: z.string().min(1),
   proposalPath: z.string().min(1),
+});
+
+const PlanQuery = z.object({
+  repoPath: z.string().min(1),
+  mode: z.enum(AUTH_MODES),
+  userNotes: z.string().max(20_000).optional(),
+});
+
+const ApprovePlanBody = z.object({
+  repoPath: z.string().min(1),
+  planPath: z.string().min(1),
+  taskCount: z.number().int().nonnegative(),
 });
 
 const HEARTBEAT_MS = 750;
@@ -429,6 +448,192 @@ export async function handleGetApproval(query: URLSearchParams): Promise<RouteRe
     return { status: 400, body: { error: "repoPath is required" } };
   }
   const approval = await readProposalApproval(repoPath);
+  return { status: 200, body: { approval } };
+}
+
+export async function handlePlanStream(
+  req: IncomingMessage,
+  res: ServerResponse,
+  deps: ServerDeps,
+  query: URLSearchParams,
+): Promise<void> {
+  const rawPath = query.get("repoPath") ?? "";
+  const expandedPath = rawPath.startsWith("~/")
+    ? resolvePath(process.env.HOME ?? "", rawPath.slice(2))
+    : resolvePath(rawPath);
+
+  const notesRaw = query.get("userNotes");
+  const parsed = PlanQuery.safeParse({
+    repoPath: expandedPath,
+    mode: query.get("mode"),
+    userNotes: notesRaw && notesRaw.length > 0 ? notesRaw : undefined,
+  });
+
+  if (!parsed.success) {
+    res.statusCode = 400;
+    res.setHeader("Content-Type", "application/json");
+    res.end(JSON.stringify({ error: "invalid query", issues: parsed.error.issues }));
+    return;
+  }
+
+  const mode = parsed.data.mode;
+  if (mode === "api" && !deps.originalApiKey) {
+    res.statusCode = 400;
+    res.setHeader("Content-Type", "application/json");
+    res.end(
+      JSON.stringify({
+        error: "api mode selected but ANTHROPIC_API_KEY was not set when the server started",
+      }),
+    );
+    return;
+  }
+
+  try {
+    const s = await stat(parsed.data.repoPath);
+    if (!s.isDirectory()) {
+      res.statusCode = 400;
+      res.setHeader("Content-Type", "application/json");
+      res.end(JSON.stringify({ error: `path is not a directory: ${parsed.data.repoPath}` }));
+      return;
+    }
+  } catch {
+    res.statusCode = 404;
+    res.setHeader("Content-Type", "application/json");
+    res.end(JSON.stringify({ error: `path not found: ${parsed.data.repoPath}` }));
+    return;
+  }
+
+  // Gate the planner on a prior proposal approval. The marker is the
+  // contract; we read the approved proposal from disk as the planner's
+  // input so the UI never has to send the proposal back to the server.
+  const approval = await readProposalApproval(parsed.data.repoPath);
+  if (!approval) {
+    res.statusCode = 409;
+    res.setHeader("Content-Type", "application/json");
+    res.end(JSON.stringify({ error: "proposal has not been approved for this repo" }));
+    return;
+  }
+  const proposalMarkdown = await readProposal(parsed.data.repoPath);
+  if (!proposalMarkdown) {
+    res.statusCode = 409;
+    res.setHeader("Content-Type", "application/json");
+    res.end(
+      JSON.stringify({
+        error: "proposal approval marker exists but completion-proposal.md is missing",
+      }),
+    );
+    return;
+  }
+
+  const sse = openSseStream(req, res);
+  const startedAt = Date.now();
+  let heartbeat: NodeJS.Timeout | undefined;
+
+  try {
+    if (mode === "api") process.env.ANTHROPIC_API_KEY = deps.originalApiKey;
+    applyAuthMode(mode);
+
+    const repo = await describeRepo(parsed.data.repoPath);
+
+    sse.send("started", {
+      repoPath: repo.path,
+      repoName: repo.name,
+      stack: repo.stack,
+      mode,
+      ts: startedAt,
+    });
+
+    heartbeat = setInterval(() => {
+      sse.send("progress", { durationMs: Date.now() - startedAt });
+    }, HEARTBEAT_MS);
+
+    const tracker = new BudgetTracker({
+      maxTokens: 200_000,
+      // Planner runs deeper than analyze — give it 15 min headroom.
+      maxDurationMs: 15 * 60 * 1000,
+    });
+
+    const gen = planStream({
+      repoPath: repo.path,
+      repoName: repo.name,
+      stackProfile: getStackProfile(repo.stack),
+      proposalMarkdown,
+      tracker,
+      ...(parsed.data.userNotes ? { userNotes: parsed.data.userNotes } : {}),
+    });
+
+    let final: {
+      planPath: string;
+      planMarkdown: string;
+      taskCount: number;
+      estimatedTokens: number;
+      estimatedDurationMs: number;
+      tokensUsed: number;
+      durationMs: number;
+    } | null = null;
+
+    for (;;) {
+      const next = await gen.next();
+      if (sse.closed()) break;
+      if (next.done) {
+        final = next.value;
+        break;
+      }
+      const event = next.value;
+      if (event.type === "sdk_message") {
+        sse.send("sdk_message", {
+          subtype: event.message.type,
+          summary: summarizeMessage(event.message),
+          ts: event.ts,
+        });
+      }
+    }
+
+    if (final && !sse.closed()) {
+      sse.send("done", {
+        ok: true,
+        planPath: final.planPath,
+        planMarkdown: final.planMarkdown,
+        taskCount: final.taskCount,
+        estimatedTokens: final.estimatedTokens,
+        estimatedDurationMs: final.estimatedDurationMs,
+        tokensUsed: final.tokensUsed,
+        durationMs: final.durationMs,
+      });
+    }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    if (!sse.closed()) sse.send("error", { ok: false, message });
+  } finally {
+    if (heartbeat) clearInterval(heartbeat);
+    restoreEnv(deps.originalApiKey);
+    sse.close();
+  }
+}
+
+export async function handleApprovePlan(payload: unknown): Promise<RouteResponse> {
+  const parsed = ApprovePlanBody.safeParse(payload);
+  if (!parsed.success) {
+    return { status: 400, body: { error: "invalid body", issues: parsed.error.issues } };
+  }
+  try {
+    const markerPath = await writePlanApproval(
+      parsed.data.repoPath,
+      parsed.data.planPath,
+      parsed.data.taskCount,
+    );
+    return { status: 200, body: { ok: true, markerPath } };
+  } catch (err) {
+    return { status: 500, body: { error: err instanceof Error ? err.message : String(err) } };
+  }
+}
+
+export async function handleGetPlanApproval(query: URLSearchParams): Promise<RouteResponse> {
+  const repoPath = query.get("repoPath");
+  if (!repoPath) {
+    return { status: 400, body: { error: "repoPath is required" } };
+  }
+  const approval = await readPlanApproval(repoPath);
   return { status: 200, body: { approval } };
 }
 
