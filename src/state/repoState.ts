@@ -43,11 +43,51 @@ export async function writeProposal(repoPath: string, markdown: string): Promise
   return path;
 }
 
+export async function readProposal(repoPath: string): Promise<string | null> {
+  const path = join(repoPath, AGENT_DIR, "completion-proposal.md");
+  try {
+    return await readFile(path, "utf8");
+  } catch (err) {
+    if (isErrnoCode(err, "ENOENT")) return null;
+    throw err;
+  }
+}
+
 export async function writePlan(repoPath: string, markdown: string): Promise<string> {
   const dir = await ensureAgentDir(repoPath);
   const path = join(dir, "plan.md");
   await writeAtomic(path, markdown);
   return path;
+}
+
+export interface ProposalApproval {
+  approvedAt: string;
+  proposalPath: string;
+}
+
+export async function writeProposalApproval(
+  repoPath: string,
+  proposalPath: string,
+): Promise<string> {
+  const dir = await ensureAgentDir(repoPath);
+  const path = join(dir, "proposal-approved.json");
+  const payload: ProposalApproval = {
+    approvedAt: new Date().toISOString(),
+    proposalPath,
+  };
+  await writeAtomic(path, JSON.stringify(payload, null, 2));
+  return path;
+}
+
+export async function readProposalApproval(repoPath: string): Promise<ProposalApproval | null> {
+  const path = join(repoPath, AGENT_DIR, "proposal-approved.json");
+  try {
+    const raw = await readFile(path, "utf8");
+    return JSON.parse(raw) as ProposalApproval;
+  } catch (err) {
+    if (isErrnoCode(err, "ENOENT")) return null;
+    throw err;
+  }
 }
 
 export async function ensureGitignore(repoPath: string): Promise<void> {
