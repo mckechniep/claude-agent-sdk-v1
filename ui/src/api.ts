@@ -57,6 +57,27 @@ export type DiscoverEvent =
   | { type: "done"; count: number; durationMs: number }
   | { type: "error"; message: string };
 
+export type AnalyzeEvent =
+  | {
+      type: "started";
+      repoPath: string;
+      repoName: string;
+      stack: StackId;
+      mode: AuthMode;
+      ts: number;
+    }
+  | { type: "progress"; durationMs: number }
+  | { type: "sdk_message"; subtype: string; summary: string; ts: number }
+  | {
+      type: "done";
+      ok: true;
+      proposalPath: string;
+      proposalMarkdown: string;
+      tokensUsed: number;
+      durationMs: number;
+    }
+  | { type: "error"; ok: false; message: string };
+
 async function json<T>(res: Response): Promise<T> {
   if (!res.ok) {
     const body: unknown = await res.json().catch(() => ({}));
@@ -78,6 +99,16 @@ export const api = {
       body: JSON.stringify({ mode }),
     }).then(json<{ preferredAuthMode: AuthMode | null }>),
   listRuns: () => fetch("/api/runs").then(json<RunsResponse>),
+  approveProposal: (args: { repoPath: string; proposalPath: string }) =>
+    fetch("/api/analyze/approve", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(args),
+    }).then(json<{ ok: true; markerPath: string }>),
+  getApproval: (repoPath: string) =>
+    fetch(`/api/analyze/approval?repoPath=${encodeURIComponent(repoPath)}`).then(
+      json<{ approval: { approvedAt: string; proposalPath: string } | null }>,
+    ),
   streamSmoke(mode: AuthMode, onEvent: (event: SmokeEvent) => void): StreamHandle {
     const es = new EventSource(`/api/smoke/stream?mode=${encodeURIComponent(mode)}`);
     const dispatch = (eventName: SmokeEvent["type"]) => (msg: MessageEvent<string>) => {
@@ -100,6 +131,50 @@ export const api = {
         dispatch("error")(msg);
       } else {
         onEvent({ type: "error", ok: false, mode, message: "stream disconnected" });
+      }
+      es.close();
+    });
+    return { close: () => es.close() };
+  },
+  streamAnalyze(
+    args: { repoPath: string; mode: AuthMode; userNotes?: string },
+    onEvent: (event: AnalyzeEvent) => void,
+  ): StreamHandle {
+    const q = new URLSearchParams({ repoPath: args.repoPath, mode: args.mode });
+    if (args.userNotes && args.userNotes.trim().length > 0) {
+      q.set("userNotes", args.userNotes);
+    }
+    const es = new EventSource(`/api/analyze/stream?${q.toString()}`);
+    const safeParse = (msg: MessageEvent<string>): Record<string, unknown> | null => {
+      try {
+        return JSON.parse(msg.data) as Record<string, unknown>;
+      } catch {
+        return null;
+      }
+    };
+    es.addEventListener("started", (msg: MessageEvent<string>) => {
+      const data = safeParse(msg);
+      if (data) onEvent({ type: "started", ...data } as AnalyzeEvent);
+    });
+    es.addEventListener("progress", (msg: MessageEvent<string>) => {
+      const data = safeParse(msg);
+      if (data) onEvent({ type: "progress", ...data } as AnalyzeEvent);
+    });
+    es.addEventListener("sdk_message", (msg: MessageEvent<string>) => {
+      const data = safeParse(msg);
+      if (data) onEvent({ type: "sdk_message", ...data } as AnalyzeEvent);
+    });
+    es.addEventListener("done", (msg: MessageEvent<string>) => {
+      const data = safeParse(msg);
+      if (data) onEvent({ type: "done", ...data } as AnalyzeEvent);
+      es.close();
+    });
+    es.addEventListener("error", (msg: Event) => {
+      if (msg instanceof MessageEvent && typeof msg.data === "string") {
+        const data = safeParse(msg);
+        if (data) onEvent({ type: "error", ok: false, message: String(data.message ?? "stream error") });
+      } else {
+        onEvent({ type: "error", ok: false, message: "stream disconnected" });
       }
       es.close();
     });

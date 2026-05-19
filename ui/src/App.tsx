@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   api,
+  type AnalyzeEvent,
   type AuthMode,
   type AuthStatus,
   type DiscoveredRepo,
@@ -67,6 +68,35 @@ type DiscoverState =
     }
   | { phase: "error"; message: string; repos: DiscoveredRepo[] };
 
+type AnalyzeState =
+  | { phase: "idle" }
+  | {
+      phase: "running";
+      repoPath: string;
+      repoName: string;
+      elapsedMs: number;
+      messages: MessageEntry[];
+      previousNotes?: string;
+    }
+  | {
+      phase: "done";
+      repoPath: string;
+      repoName: string;
+      messages: MessageEntry[];
+      proposalPath: string;
+      proposalMarkdown: string;
+      tokensUsed: number;
+      durationMs: number;
+      approvedAt: string | null;
+    }
+  | {
+      phase: "error";
+      repoPath: string;
+      repoName: string;
+      message: string;
+      messages: MessageEntry[];
+    };
+
 export default function App() {
   const [authState, reloadAuth] = useAsync<AuthStatus>(() => api.authStatus(), []);
   const [runsState, reloadRuns] = useAsync<RunsResponse>(() => api.listRuns(), []);
@@ -75,9 +105,12 @@ export default function App() {
   const [discover, setDiscover] = useState<DiscoverState>({ phase: "idle" });
   const [scanPath, setScanPath] = useState<string>("~/projects");
   const [scanDepth, setScanDepth] = useState<number>(2);
+  const [analyzeState, setAnalyzeState] = useState<AnalyzeState>({ phase: "idle" });
   const streamRef = useRef<{ close: () => void } | null>(null);
   const discoverStreamRef = useRef<{ close: () => void } | null>(null);
+  const analyzeStreamRef = useRef<{ close: () => void } | null>(null);
   const messageIdRef = useRef(0);
+  const analyzeMessageIdRef = useRef(0);
 
   useEffect(() => {
     if (authState.phase === "ok" && chosenMode === null) {
@@ -96,6 +129,7 @@ export default function App() {
     () => () => {
       streamRef.current?.close();
       discoverStreamRef.current?.close();
+      analyzeStreamRef.current?.close();
     },
     [],
   );
@@ -129,6 +163,61 @@ export default function App() {
         setDiscover((prev) => reduceDiscover(prev, event));
       },
     );
+  };
+
+  const onAnalyze = (repo: DiscoveredRepo, userNotes?: string) => {
+    if (!chosenMode) return;
+    if (analyzeState.phase === "running") return;
+    analyzeStreamRef.current?.close();
+    analyzeMessageIdRef.current = 0;
+    setAnalyzeState({
+      phase: "running",
+      repoPath: repo.path,
+      repoName: repo.name,
+      elapsedMs: 0,
+      messages: [],
+      ...(userNotes ? { previousNotes: userNotes } : {}),
+    });
+    analyzeStreamRef.current = api.streamAnalyze(
+      { repoPath: repo.path, mode: chosenMode, userNotes },
+      (event: AnalyzeEvent) => {
+        setAnalyzeState((prev) =>
+          reduceAnalyze(prev, event, repo.name, () => ++analyzeMessageIdRef.current),
+        );
+      },
+    );
+  };
+
+  const onApprove = async () => {
+    if (analyzeState.phase !== "done") return;
+    try {
+      await api.approveProposal({
+        repoPath: analyzeState.repoPath,
+        proposalPath: analyzeState.proposalPath,
+      });
+      setAnalyzeState((prev) =>
+        prev.phase === "done" ? { ...prev, approvedAt: new Date().toISOString() } : prev,
+      );
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      // Surface failure inline via the existing error phase. Keep proposal visible.
+      setAnalyzeState((prev) =>
+        prev.phase === "done"
+          ? {
+              phase: "error",
+              repoPath: prev.repoPath,
+              repoName: prev.repoName,
+              message: `approve failed: ${message}`,
+              messages: prev.messages,
+            }
+          : prev,
+      );
+    }
+  };
+
+  const onCloseAnalyze = () => {
+    analyzeStreamRef.current?.close();
+    setAnalyzeState({ phase: "idle" });
   };
 
   return (
@@ -276,7 +365,14 @@ export default function App() {
             </button>
           </div>
 
-          <DiscoverReadout discover={discover} />
+          <DiscoverReadout
+            discover={discover}
+            analyze={analyzeState}
+            chosenMode={chosenMode}
+            onAnalyze={onAnalyze}
+            onApprove={onApprove}
+            onCloseAnalyze={onCloseAnalyze}
+          />
         </section>
       </main>
 
@@ -417,7 +513,23 @@ function reduceDiscover(prev: DiscoverState, event: DiscoverEvent): DiscoverStat
   }
 }
 
-function DiscoverReadout({ discover }: { discover: DiscoverState }) {
+interface DiscoverReadoutProps {
+  discover: DiscoverState;
+  analyze: AnalyzeState;
+  chosenMode: AuthMode | null;
+  onAnalyze: (repo: DiscoveredRepo, userNotes?: string) => void;
+  onApprove: () => void;
+  onCloseAnalyze: () => void;
+}
+
+function DiscoverReadout({
+  discover,
+  analyze,
+  chosenMode,
+  onAnalyze,
+  onApprove,
+  onCloseAnalyze,
+}: DiscoverReadoutProps) {
   if (discover.phase === "idle") {
     return (
       <p className="muted scan-empty">
@@ -447,11 +559,7 @@ function DiscoverReadout({ discover }: { discover: DiscoverState }) {
             </>
           )}
         </span>
-        {!isErr && (
-          <span className="scan-meta">
-            depth {discover.phase === "scanning" ? discover.depth : discover.depth}
-          </span>
-        )}
+        {!isErr && <span className="scan-meta">depth {discover.depth}</span>}
       </div>
 
       {discover.repos.length === 0 && isScanning && (
@@ -460,9 +568,24 @@ function DiscoverReadout({ discover }: { discover: DiscoverState }) {
 
       {discover.repos.length > 0 && (
         <ul className="repos">
-          {discover.repos.map((repo) => (
-            <RepoRow key={repo.path} repo={repo} />
-          ))}
+          {discover.repos.map((repo) => {
+            const isActive = analyze.phase !== "idle" && analyze.repoPath === repo.path;
+            const otherRunning =
+              analyze.phase === "running" && analyze.repoPath !== repo.path;
+            return (
+              <RepoRow
+                key={repo.path}
+                repo={repo}
+                isActive={isActive}
+                disabled={!chosenMode || otherRunning}
+                onAnalyze={(notes) => onAnalyze(repo, notes)}
+                onApprove={onApprove}
+                analyze={isActive ? analyze : null}
+                onClose={onCloseAnalyze}
+                chosenMode={chosenMode}
+              />
+            );
+          })}
         </ul>
       )}
 
@@ -475,14 +598,51 @@ function DiscoverReadout({ discover }: { discover: DiscoverState }) {
   );
 }
 
-function RepoRow({ repo }: { repo: DiscoveredRepo }) {
+interface RepoRowProps {
+  repo: DiscoveredRepo;
+  isActive: boolean;
+  disabled: boolean;
+  onAnalyze: (userNotes?: string) => void;
+  onApprove: () => void;
+  onClose: () => void;
+  analyze: AnalyzeState | null;
+  chosenMode: AuthMode | null;
+}
+
+function RepoRow({
+  repo,
+  isActive,
+  disabled,
+  onAnalyze,
+  onApprove,
+  onClose,
+  analyze,
+  chosenMode,
+}: RepoRowProps) {
   const date = repo.lastCommitDate ? formatRelative(repo.lastCommitDate) : "no commits";
+  const buttonLabel = (() => {
+    if (isActive && analyze) {
+      if (analyze.phase === "running") return "analyzing…";
+      if (analyze.phase === "done") return "re-analyze";
+      if (analyze.phase === "error") return "retry";
+    }
+    return "Analyze";
+  })();
   return (
     <li className="repo-row">
       <div className="repo-head">
         <span className="repo-name">{repo.name}</span>
         <span className={`repo-stack repo-stack-${repo.stack}`}>{repo.stack}</span>
         {repo.isDirty && <span className="repo-flag repo-flag-dirty">dirty</span>}
+        <span className="repo-row-spacer" />
+        <button
+          className={`btn btn-row ${isActive ? "btn-row-on" : ""}`}
+          onClick={() => onAnalyze()}
+          disabled={disabled || (isActive && analyze?.phase === "running")}
+          title={!chosenMode ? "select an auth mode above first" : undefined}
+        >
+          {buttonLabel}
+        </button>
       </div>
       <div className="repo-path" title={repo.path}>
         {repo.path}
@@ -496,8 +656,205 @@ function RepoRow({ repo }: { repo: DiscoveredRepo }) {
         </span>
         <span className="repo-chip">{date}</span>
       </div>
+      {isActive && analyze && analyze.phase !== "idle" && (
+        <AnalyzePanel
+          analyze={analyze}
+          onClose={onClose}
+          onReanalyze={(notes) => onAnalyze(notes)}
+          onApprove={onApprove}
+        />
+      )}
     </li>
   );
+}
+
+interface AnalyzePanelProps {
+  analyze: AnalyzeState;
+  onClose: () => void;
+  onReanalyze: (userNotes?: string) => void;
+  onApprove: () => void;
+}
+
+function AnalyzePanel({ analyze, onClose, onReanalyze, onApprove }: AnalyzePanelProps) {
+  const [notes, setNotes] = useState<string>("");
+  if (analyze.phase === "idle") return null;
+  const isRunning = analyze.phase === "running";
+  const isErr = analyze.phase === "error";
+  const isDone = analyze.phase === "done";
+  const isApproved = isDone && analyze.approvedAt !== null;
+
+  const headerLabel = isApproved ? (
+    "approved"
+  ) : isRunning ? (
+    <>
+      <span className="pulse" />
+      analyzing · {(analyze.elapsedMs / 1000).toFixed(1)}s
+    </>
+  ) : isErr ? (
+    "analyze failed"
+  ) : (
+    <>
+      proposal · {(analyze.durationMs / 1000).toFixed(1)}s · {analyze.tokensUsed.toLocaleString()} tok
+    </>
+  );
+
+  return (
+    <div
+      className={`analyze ${
+        isApproved
+          ? "analyze-approved"
+          : isRunning
+            ? "analyze-live"
+            : isErr
+              ? "analyze-err"
+              : "analyze-done"
+      }`}
+    >
+      <div className="analyze-head">
+        <span className="analyze-label">{headerLabel}</span>
+        <button className="btn btn-ghost btn-tight" onClick={onClose}>
+          close
+        </button>
+      </div>
+
+      {analyze.messages.length > 0 && (
+        <ul className="stream-log analyze-log">
+          {analyze.messages.map((m) => (
+            <li key={m.id} className="stream-row">
+              <span className={`stream-pill stream-pill-${m.subtype}`}>{m.subtype}</span>
+              <span className="stream-summary">{m.summary || <em className="muted">·</em>}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {isRunning && analyze.messages.length === 0 && (
+        <div className="stream-empty">waiting for first SDK message…</div>
+      )}
+
+      {isDone && (
+        <div className="proposal">
+          <div className="proposal-head">
+            <span className="proposal-label">completion-proposal.md</span>
+            <span className="proposal-path" title={analyze.proposalPath}>
+              {analyze.proposalPath}
+            </span>
+          </div>
+          <pre className="proposal-body">{analyze.proposalMarkdown}</pre>
+
+          {!isApproved && (
+            <div className="proposal-feedback">
+              <label className="field">
+                <span className="field-label">your reply to the analyzer</span>
+                <textarea
+                  className="field-input field-textarea"
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  placeholder="answer the open questions, correct misunderstandings, narrow scope — the analyzer will refine the proposal using these"
+                  rows={4}
+                  spellCheck
+                />
+              </label>
+              <div className="proposal-actions">
+                <button
+                  className="btn btn-primary"
+                  onClick={() => onReanalyze(notes.trim() || undefined)}
+                  disabled={notes.trim().length === 0}
+                  title={
+                    notes.trim().length === 0
+                      ? "type a reply above to submit it to the analyzer"
+                      : "send your reply back to the analyzer to refine the proposal"
+                  }
+                >
+                  Submit notes / answers
+                </button>
+                <button
+                  className="btn btn-ghost btn-approve"
+                  onClick={onApprove}
+                  title={
+                    notes.trim().length > 0
+                      ? `proceeds with the current proposal — your ${notes.trim().length} chars of notes will NOT be sent to the analyzer or saved`
+                      : "lock in the current proposal as-is, move on to the planner phase"
+                  }
+                >
+                  Approve as-is
+                </button>
+              </div>
+              {notes.trim().length > 0 && (
+                <p className="proposal-hint">
+                  Heads up: <strong>Approve as-is</strong> will discard the {notes.trim().length}{" "}
+                  characters in the box above.
+                </p>
+              )}
+            </div>
+          )}
+
+          {isApproved && analyze.approvedAt && (
+            <div className="approved-banner">
+              <span className="approved-mark">✓</span>
+              <span>
+                approved {formatRelative(analyze.approvedAt)} · ready for planner phase
+              </span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {isErr && <pre className="scan-err-body">{analyze.message}</pre>}
+    </div>
+  );
+}
+
+function reduceAnalyze(
+  prev: AnalyzeState,
+  event: AnalyzeEvent,
+  repoName: string,
+  nextId: () => number,
+): AnalyzeState {
+  switch (event.type) {
+    case "started": {
+      return {
+        phase: "running",
+        repoPath: event.repoPath,
+        repoName: event.repoName,
+        elapsedMs: 0,
+        messages: [],
+      };
+    }
+    case "progress": {
+      if (prev.phase !== "running") return prev;
+      return { ...prev, elapsedMs: event.durationMs };
+    }
+    case "sdk_message": {
+      if (prev.phase !== "running") return prev;
+      const entry: MessageEntry = {
+        id: nextId(),
+        subtype: event.subtype,
+        summary: event.summary,
+        ts: event.ts,
+      };
+      return { ...prev, messages: [...prev.messages, entry] };
+    }
+    case "done": {
+      if (prev.phase !== "running") return prev;
+      return {
+        phase: "done",
+        repoPath: prev.repoPath,
+        repoName: prev.repoName,
+        messages: prev.messages,
+        proposalPath: event.proposalPath,
+        proposalMarkdown: event.proposalMarkdown,
+        tokensUsed: event.tokensUsed,
+        durationMs: event.durationMs,
+        approvedAt: null,
+      };
+    }
+    case "error": {
+      const messages = prev.phase === "running" ? prev.messages : [];
+      const repoPath = prev.phase !== "idle" ? prev.repoPath : "";
+      return { phase: "error", repoPath, repoName, message: event.message, messages };
+    }
+  }
 }
 
 function formatRelative(iso: string): string {
