@@ -60,6 +60,16 @@ export async function writePlan(repoPath: string, markdown: string): Promise<str
   return path;
 }
 
+export async function readPlan(repoPath: string): Promise<string | null> {
+  const path = join(repoPath, AGENT_DIR, "plan.md");
+  try {
+    return await readFile(path, "utf8");
+  } catch (err) {
+    if (isErrnoCode(err, "ENOENT")) return null;
+    throw err;
+  }
+}
+
 export interface ProposalApproval {
   approvedAt: string;
   proposalPath: string;
@@ -84,6 +94,39 @@ export async function readProposalApproval(repoPath: string): Promise<ProposalAp
   try {
     const raw = await readFile(path, "utf8");
     return JSON.parse(raw) as ProposalApproval;
+  } catch (err) {
+    if (isErrnoCode(err, "ENOENT")) return null;
+    throw err;
+  }
+}
+
+export interface PlanApproval {
+  approvedAt: string;
+  planPath: string;
+  taskCount: number;
+}
+
+export async function writePlanApproval(
+  repoPath: string,
+  planPath: string,
+  taskCount: number,
+): Promise<string> {
+  const dir = await ensureAgentDir(repoPath);
+  const path = join(dir, "plan-approved.json");
+  const payload: PlanApproval = {
+    approvedAt: new Date().toISOString(),
+    planPath,
+    taskCount,
+  };
+  await writeAtomic(path, JSON.stringify(payload, null, 2));
+  return path;
+}
+
+export async function readPlanApproval(repoPath: string): Promise<PlanApproval | null> {
+  const path = join(repoPath, AGENT_DIR, "plan-approved.json");
+  try {
+    const raw = await readFile(path, "utf8");
+    return JSON.parse(raw) as PlanApproval;
   } catch (err) {
     if (isErrnoCode(err, "ENOENT")) return null;
     throw err;

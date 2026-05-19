@@ -8,6 +8,9 @@ import {
   loadRepoState,
   writeProposal,
   writePlan,
+  readPlan,
+  writePlanApproval,
+  readPlanApproval,
   ensureGitignore,
 } from "../../../src/state/repoState.js";
 import type { RepoEntry } from "../../../src/types.js";
@@ -56,6 +59,34 @@ describe("repoState", () => {
     const path = await writePlan(repo, "# Plan");
     expect(path).toBe(join(repo, ".agent", "plan.md"));
     expect(await readFile(path, "utf8")).toBe("# Plan");
+  });
+
+  it("readPlan returns null when plan.md is absent", async () => {
+    await ensureAgentDir(repo);
+    expect(await readPlan(repo)).toBeNull();
+  });
+
+  it("readPlan round-trips the markdown written by writePlan", async () => {
+    await ensureAgentDir(repo);
+    await writePlan(repo, "# Plan — x\n\nbody");
+    expect(await readPlan(repo)).toBe("# Plan — x\n\nbody");
+  });
+
+  it("plan approval marker is a pointer-only payload", async () => {
+    await ensureAgentDir(repo);
+    const planPath = await writePlan(repo, "# Plan");
+    const markerPath = await writePlanApproval(repo, planPath, 7);
+    expect(markerPath).toBe(join(repo, ".agent", "plan-approved.json"));
+    const approval = await readPlanApproval(repo);
+    expect(approval).not.toBeNull();
+    expect(approval?.planPath).toBe(planPath);
+    expect(approval?.taskCount).toBe(7);
+    expect(typeof approval?.approvedAt).toBe("string");
+  });
+
+  it("readPlanApproval returns null when no marker exists", async () => {
+    await ensureAgentDir(repo);
+    expect(await readPlanApproval(repo)).toBeNull();
   });
 
   it("appends .agent/ to .gitignore if not present", async () => {
