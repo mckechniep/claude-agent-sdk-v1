@@ -89,6 +89,7 @@ type AnalyzeState =
       tokensUsed: number;
       durationMs: number;
       approvedAt: string | null;
+      previousNotes?: string;
     }
   | {
       phase: "error";
@@ -106,6 +107,7 @@ type PlanState =
       repoName: string;
       elapsedMs: number;
       messages: MessageEntry[];
+      previousNotes?: string;
     }
   | {
       phase: "done";
@@ -120,6 +122,7 @@ type PlanState =
       tokensUsed: number;
       durationMs: number;
       approvedAt: string | null;
+      previousNotes?: string;
     }
   | {
       phase: "error";
@@ -272,6 +275,7 @@ export default function App() {
       repoName: repo.name,
       elapsedMs: 0,
       messages: [],
+      ...(userNotes ? { previousNotes: userNotes } : {}),
     });
     planStreamRef.current = api.streamPlan(
       { repoPath: repo.path, mode: chosenMode, userNotes },
@@ -806,13 +810,16 @@ function AnalyzePanel({
   const isErr = analyze.phase === "error";
   const isDone = analyze.phase === "done";
   const isApproved = isDone && analyze.approvedAt !== null;
+  const submittedNotes = isRunning || isDone ? analyze.previousNotes : undefined;
+  const isRefinement = Boolean(submittedNotes);
 
   const headerLabel = isApproved ? (
     "approved"
   ) : isRunning ? (
     <>
       <span className="pulse" />
-      analyzing · {(analyze.elapsedMs / 1000).toFixed(1)}s
+      {isRefinement ? "refining with your notes" : "analyzing"} ·{" "}
+      {(analyze.elapsedMs / 1000).toFixed(1)}s
     </>
   ) : isErr ? (
     "analyze failed"
@@ -859,11 +866,25 @@ function AnalyzePanel({
       {isDone && (
         <div className="proposal">
           <div className="proposal-head">
-            <span className="proposal-label">completion-proposal.md</span>
+            <span className="proposal-label">
+              completion-proposal.md
+              {isRefinement && <span className="iter-badge">refined</span>}
+            </span>
             <span className="proposal-path" title={analyze.proposalPath}>
               {analyze.proposalPath}
             </span>
           </div>
+
+          {isRefinement && submittedNotes && (
+            <div className="iter-notes">
+              <span className="iter-notes-label">you asked for</span>
+              <p className="iter-notes-body">{submittedNotes}</p>
+              <span className="iter-notes-hint">
+                read the proposal below to see how it was incorporated
+              </span>
+            </div>
+          )}
+
           <pre className="proposal-body">{analyze.proposalMarkdown}</pre>
 
           {!isApproved && (
@@ -944,6 +965,9 @@ function PlanPanel({ plan, onPlan, onApprovePlan }: PlanPanelProps) {
   const isDone = plan?.phase === "done";
   const isApproved = isDone && plan.approvedAt !== null;
   const isIdle = !plan || plan.phase === "idle";
+  const submittedNotes =
+    plan && (plan.phase === "running" || plan.phase === "done") ? plan.previousNotes : undefined;
+  const isRefinement = Boolean(submittedNotes);
 
   const headerLabel = isIdle ? (
     "planner — break the proposal into committable tasks"
@@ -952,7 +976,8 @@ function PlanPanel({ plan, onPlan, onApprovePlan }: PlanPanelProps) {
   ) : isRunning ? (
     <>
       <span className="pulse" />
-      planning · {(plan.elapsedMs / 1000).toFixed(1)}s
+      {isRefinement ? "refining plan with your notes" : "planning"} ·{" "}
+      {(plan.elapsedMs / 1000).toFixed(1)}s
     </>
   ) : isErr ? (
     "plan failed"
@@ -1002,11 +1027,25 @@ function PlanPanel({ plan, onPlan, onApprovePlan }: PlanPanelProps) {
       {isDone && (
         <div className="proposal">
           <div className="proposal-head">
-            <span className="proposal-label">plan.md</span>
+            <span className="proposal-label">
+              plan.md
+              {isRefinement && <span className="iter-badge">refined</span>}
+            </span>
             <span className="proposal-path" title={plan.planPath}>
               {plan.planPath}
             </span>
           </div>
+
+          {isRefinement && submittedNotes && (
+            <div className="iter-notes">
+              <span className="iter-notes-label">you asked for</span>
+              <p className="iter-notes-body">{submittedNotes}</p>
+              <span className="iter-notes-hint">
+                read the plan below to see how it was incorporated
+              </span>
+            </div>
+          )}
+
           <pre className="proposal-body">{plan.planMarkdown}</pre>
 
           {!isApproved && (
@@ -1118,6 +1157,7 @@ function reducePlan(
         tokensUsed: event.tokensUsed,
         durationMs: event.durationMs,
         approvedAt: null,
+        ...(prev.previousNotes ? { previousNotes: prev.previousNotes } : {}),
       };
     }
     case "error": {
@@ -1170,6 +1210,7 @@ function reduceAnalyze(
         tokensUsed: event.tokensUsed,
         durationMs: event.durationMs,
         approvedAt: null,
+        ...(prev.previousNotes ? { previousNotes: prev.previousNotes } : {}),
       };
     }
     case "error": {

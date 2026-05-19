@@ -1056,6 +1056,59 @@ pre {
   font-size: 14px;
 }
 
+/* ---------- iteration scaffolding (shared across analyze + plan) ---------- */
+.iter-badge {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  font-weight: 600;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border: 1px solid oklch(55% 0.18 260 / 0.25);
+  vertical-align: middle;
+}
+
+.iter-notes {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 16px;
+  margin: 12px 16px 0;
+  border-left: 3px solid var(--accent);
+  background: var(--accent-soft);
+  border-radius: 0 var(--r-sm) var(--r-sm) 0;
+}
+
+.iter-notes-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.iter-notes-body {
+  margin: 0;
+  font-family: var(--font-sans);
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--ink);
+  font-style: italic;
+  white-space: pre-wrap;
+}
+
+.iter-notes-hint {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--ink-mute);
+}
+
 /* ---------- plan panel ---------- */
 .plan {
   margin-top: 12px;
