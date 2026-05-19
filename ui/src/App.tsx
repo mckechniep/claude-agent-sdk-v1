@@ -6,6 +6,7 @@ import {
   type AuthStatus,
   type DiscoveredRepo,
   type DiscoverEvent,
+  type PlanEvent,
   type RunsResponse,
   type SmokeEvent,
 } from "./api";
@@ -97,6 +98,37 @@ type AnalyzeState =
       messages: MessageEntry[];
     };
 
+type PlanState =
+  | { phase: "idle" }
+  | {
+      phase: "running";
+      repoPath: string;
+      repoName: string;
+      elapsedMs: number;
+      messages: MessageEntry[];
+    }
+  | {
+      phase: "done";
+      repoPath: string;
+      repoName: string;
+      messages: MessageEntry[];
+      planPath: string;
+      planMarkdown: string;
+      taskCount: number;
+      estimatedTokens: number;
+      estimatedDurationMs: number;
+      tokensUsed: number;
+      durationMs: number;
+      approvedAt: string | null;
+    }
+  | {
+      phase: "error";
+      repoPath: string;
+      repoName: string;
+      message: string;
+      messages: MessageEntry[];
+    };
+
 export default function App() {
   const [authState, reloadAuth] = useAsync<AuthStatus>(() => api.authStatus(), []);
   const [runsState, reloadRuns] = useAsync<RunsResponse>(() => api.listRuns(), []);
@@ -106,11 +138,14 @@ export default function App() {
   const [scanPath, setScanPath] = useState<string>("~/projects");
   const [scanDepth, setScanDepth] = useState<number>(2);
   const [analyzeState, setAnalyzeState] = useState<AnalyzeState>({ phase: "idle" });
+  const [planState, setPlanState] = useState<PlanState>({ phase: "idle" });
   const streamRef = useRef<{ close: () => void } | null>(null);
   const discoverStreamRef = useRef<{ close: () => void } | null>(null);
   const analyzeStreamRef = useRef<{ close: () => void } | null>(null);
+  const planStreamRef = useRef<{ close: () => void } | null>(null);
   const messageIdRef = useRef(0);
   const analyzeMessageIdRef = useRef(0);
+  const planMessageIdRef = useRef(0);
 
   useEffect(() => {
     if (authState.phase === "ok" && chosenMode === null) {
@@ -130,6 +165,7 @@ export default function App() {
       streamRef.current?.close();
       discoverStreamRef.current?.close();
       analyzeStreamRef.current?.close();
+      planStreamRef.current?.close();
     },
     [],
   );
@@ -169,6 +205,7 @@ export default function App() {
     if (!chosenMode) return;
     if (analyzeState.phase === "running") return;
     analyzeStreamRef.current?.close();
+    planStreamRef.current?.close();
     analyzeMessageIdRef.current = 0;
     setAnalyzeState({
       phase: "running",
@@ -178,6 +215,8 @@ export default function App() {
       messages: [],
       ...(userNotes ? { previousNotes: userNotes } : {}),
     });
+    // Re-analyzing invalidates any in-memory plan for this repo.
+    setPlanState({ phase: "idle" });
     analyzeStreamRef.current = api.streamAnalyze(
       { repoPath: repo.path, mode: chosenMode, userNotes },
       (event: AnalyzeEvent) => {
@@ -217,7 +256,58 @@ export default function App() {
 
   const onCloseAnalyze = () => {
     analyzeStreamRef.current?.close();
+    planStreamRef.current?.close();
     setAnalyzeState({ phase: "idle" });
+    setPlanState({ phase: "idle" });
+  };
+
+  const onPlan = (repo: DiscoveredRepo, userNotes?: string) => {
+    if (!chosenMode) return;
+    if (planState.phase === "running") return;
+    planStreamRef.current?.close();
+    planMessageIdRef.current = 0;
+    setPlanState({
+      phase: "running",
+      repoPath: repo.path,
+      repoName: repo.name,
+      elapsedMs: 0,
+      messages: [],
+    });
+    planStreamRef.current = api.streamPlan(
+      { repoPath: repo.path, mode: chosenMode, userNotes },
+      (event: PlanEvent) => {
+        setPlanState((prev) =>
+          reducePlan(prev, event, repo.name, () => ++planMessageIdRef.current),
+        );
+      },
+    );
+  };
+
+  const onApprovePlan = async () => {
+    if (planState.phase !== "done") return;
+    try {
+      await api.approvePlan({
+        repoPath: planState.repoPath,
+        planPath: planState.planPath,
+        taskCount: planState.taskCount,
+      });
+      setPlanState((prev) =>
+        prev.phase === "done" ? { ...prev, approvedAt: new Date().toISOString() } : prev,
+      );
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      setPlanState((prev) =>
+        prev.phase === "done"
+          ? {
+              phase: "error",
+              repoPath: prev.repoPath,
+              repoName: prev.repoName,
+              message: `approve failed: ${message}`,
+              messages: prev.messages,
+            }
+          : prev,
+      );
+    }
   };
 
   return (
@@ -368,10 +458,13 @@ export default function App() {
           <DiscoverReadout
             discover={discover}
             analyze={analyzeState}
+            plan={planState}
             chosenMode={chosenMode}
             onAnalyze={onAnalyze}
             onApprove={onApprove}
             onCloseAnalyze={onCloseAnalyze}
+            onPlan={onPlan}
+            onApprovePlan={onApprovePlan}
           />
         </section>
       </main>
@@ -516,19 +609,25 @@ function reduceDiscover(prev: DiscoverState, event: DiscoverEvent): DiscoverStat
 interface DiscoverReadoutProps {
   discover: DiscoverState;
   analyze: AnalyzeState;
+  plan: PlanState;
   chosenMode: AuthMode | null;
   onAnalyze: (repo: DiscoveredRepo, userNotes?: string) => void;
   onApprove: () => void;
   onCloseAnalyze: () => void;
+  onPlan: (repo: DiscoveredRepo, userNotes?: string) => void;
+  onApprovePlan: () => void;
 }
 
 function DiscoverReadout({
   discover,
   analyze,
+  plan,
   chosenMode,
   onAnalyze,
   onApprove,
   onCloseAnalyze,
+  onPlan,
+  onApprovePlan,
 }: DiscoverReadoutProps) {
   if (discover.phase === "idle") {
     return (
@@ -571,7 +670,9 @@ function DiscoverReadout({
           {discover.repos.map((repo) => {
             const isActive = analyze.phase !== "idle" && analyze.repoPath === repo.path;
             const otherRunning =
-              analyze.phase === "running" && analyze.repoPath !== repo.path;
+              (analyze.phase === "running" && analyze.repoPath !== repo.path) ||
+              (plan.phase === "running" && plan.repoPath !== repo.path);
+            const repoPlan = plan.phase !== "idle" && plan.repoPath === repo.path ? plan : null;
             return (
               <RepoRow
                 key={repo.path}
@@ -581,7 +682,10 @@ function DiscoverReadout({
                 onAnalyze={(notes) => onAnalyze(repo, notes)}
                 onApprove={onApprove}
                 analyze={isActive ? analyze : null}
+                plan={repoPlan}
                 onClose={onCloseAnalyze}
+                onPlan={(notes) => onPlan(repo, notes)}
+                onApprovePlan={onApprovePlan}
                 chosenMode={chosenMode}
               />
             );
@@ -605,7 +709,10 @@ interface RepoRowProps {
   onAnalyze: (userNotes?: string) => void;
   onApprove: () => void;
   onClose: () => void;
+  onPlan: (userNotes?: string) => void;
+  onApprovePlan: () => void;
   analyze: AnalyzeState | null;
+  plan: PlanState | null;
   chosenMode: AuthMode | null;
 }
 
@@ -616,7 +723,10 @@ function RepoRow({
   onAnalyze,
   onApprove,
   onClose,
+  onPlan,
+  onApprovePlan,
   analyze,
+  plan,
   chosenMode,
 }: RepoRowProps) {
   const date = repo.lastCommitDate ? formatRelative(repo.lastCommitDate) : "no commits";
@@ -659,9 +769,12 @@ function RepoRow({
       {isActive && analyze && analyze.phase !== "idle" && (
         <AnalyzePanel
           analyze={analyze}
+          plan={plan}
           onClose={onClose}
           onReanalyze={(notes) => onAnalyze(notes)}
           onApprove={onApprove}
+          onPlan={(notes) => onPlan(notes)}
+          onApprovePlan={onApprovePlan}
         />
       )}
     </li>
@@ -670,12 +783,23 @@ function RepoRow({
 
 interface AnalyzePanelProps {
   analyze: AnalyzeState;
+  plan: PlanState | null;
   onClose: () => void;
   onReanalyze: (userNotes?: string) => void;
   onApprove: () => void;
+  onPlan: (userNotes?: string) => void;
+  onApprovePlan: () => void;
 }
 
-function AnalyzePanel({ analyze, onClose, onReanalyze, onApprove }: AnalyzePanelProps) {
+function AnalyzePanel({
+  analyze,
+  plan,
+  onClose,
+  onReanalyze,
+  onApprove,
+  onPlan,
+  onApprovePlan,
+}: AnalyzePanelProps) {
   const [notes, setNotes] = useState<string>("");
   if (analyze.phase === "idle") return null;
   const isRunning = analyze.phase === "running";
@@ -792,17 +916,216 @@ function AnalyzePanel({ analyze, onClose, onReanalyze, onApprove }: AnalyzePanel
           {isApproved && analyze.approvedAt && (
             <div className="approved-banner">
               <span className="approved-mark">✓</span>
+              <span>proposal approved {formatRelative(analyze.approvedAt)}</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {isApproved && (
+        <PlanPanel plan={plan} onPlan={onPlan} onApprovePlan={onApprovePlan} />
+      )}
+
+      {isErr && <pre className="scan-err-body">{analyze.message}</pre>}
+    </div>
+  );
+}
+
+interface PlanPanelProps {
+  plan: PlanState | null;
+  onPlan: (userNotes?: string) => void;
+  onApprovePlan: () => void;
+}
+
+function PlanPanel({ plan, onPlan, onApprovePlan }: PlanPanelProps) {
+  const [notes, setNotes] = useState<string>("");
+  const isRunning = plan?.phase === "running";
+  const isErr = plan?.phase === "error";
+  const isDone = plan?.phase === "done";
+  const isApproved = isDone && plan.approvedAt !== null;
+  const isIdle = !plan || plan.phase === "idle";
+
+  const headerLabel = isIdle ? (
+    "planner — break the proposal into committable tasks"
+  ) : isApproved ? (
+    "plan approved"
+  ) : isRunning ? (
+    <>
+      <span className="pulse" />
+      planning · {(plan.elapsedMs / 1000).toFixed(1)}s
+    </>
+  ) : isErr ? (
+    "plan failed"
+  ) : isDone ? (
+    <>
+      plan · {plan.taskCount} task{plan.taskCount === 1 ? "" : "s"} ·{" "}
+      {(plan.durationMs / 1000).toFixed(1)}s · {plan.tokensUsed.toLocaleString()} tok
+    </>
+  ) : null;
+
+  const panelClass = isApproved
+    ? "plan plan-approved"
+    : isRunning
+      ? "plan plan-live"
+      : isErr
+        ? "plan plan-err"
+        : isDone
+          ? "plan plan-done"
+          : "plan plan-idle";
+
+  return (
+    <div className={panelClass}>
+      <div className="plan-head">
+        <span className="plan-label">{headerLabel}</span>
+        {isIdle && (
+          <button className="btn btn-primary btn-tight" onClick={() => onPlan()}>
+            Generate plan
+          </button>
+        )}
+      </div>
+
+      {plan && plan.phase !== "idle" && plan.messages.length > 0 && (
+        <ul className="stream-log analyze-log">
+          {plan.messages.map((m) => (
+            <li key={m.id} className="stream-row">
+              <span className={`stream-pill stream-pill-${m.subtype}`}>{m.subtype}</span>
+              <span className="stream-summary">{m.summary || <em className="muted">·</em>}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {isRunning && plan.messages.length === 0 && (
+        <div className="stream-empty">waiting for first SDK message…</div>
+      )}
+
+      {isDone && (
+        <div className="proposal">
+          <div className="proposal-head">
+            <span className="proposal-label">plan.md</span>
+            <span className="proposal-path" title={plan.planPath}>
+              {plan.planPath}
+            </span>
+          </div>
+          <pre className="proposal-body">{plan.planMarkdown}</pre>
+
+          {!isApproved && (
+            <div className="proposal-feedback">
+              <label className="field">
+                <span className="field-label">your reply to the planner</span>
+                <textarea
+                  className="field-input field-textarea"
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  placeholder="re-shape the task list — split, merge, reorder, add acceptance criteria. The planner will refine the plan and preserve unchanged task IDs."
+                  rows={4}
+                  spellCheck
+                />
+              </label>
+              <div className="proposal-actions">
+                <button
+                  className="btn btn-primary"
+                  onClick={() => onPlan(notes.trim() || undefined)}
+                  disabled={notes.trim().length === 0}
+                  title={
+                    notes.trim().length === 0
+                      ? "type a reply above to submit it to the planner"
+                      : "send your reply back to the planner to refine the task list"
+                  }
+                >
+                  Submit notes / answers
+                </button>
+                <button
+                  className="btn btn-ghost btn-approve"
+                  onClick={onApprovePlan}
+                  title={
+                    notes.trim().length > 0
+                      ? `proceeds with the current plan — your ${notes.trim().length} chars of notes will NOT be sent to the planner or saved`
+                      : "lock in the current plan, ready for the executor phase"
+                  }
+                >
+                  Approve plan
+                </button>
+              </div>
+              {notes.trim().length > 0 && (
+                <p className="proposal-hint">
+                  Heads up: <strong>Approve plan</strong> will discard the {notes.trim().length}{" "}
+                  characters in the box above.
+                </p>
+              )}
+            </div>
+          )}
+
+          {isApproved && plan.approvedAt && (
+            <div className="approved-banner">
+              <span className="approved-mark">✓</span>
               <span>
-                approved {formatRelative(analyze.approvedAt)} · ready for planner phase
+                plan approved {formatRelative(plan.approvedAt)} · {plan.taskCount} task
+                {plan.taskCount === 1 ? "" : "s"} queued for executor phase
               </span>
             </div>
           )}
         </div>
       )}
 
-      {isErr && <pre className="scan-err-body">{analyze.message}</pre>}
+      {isErr && plan && <pre className="scan-err-body">{plan.message}</pre>}
     </div>
   );
+}
+
+function reducePlan(
+  prev: PlanState,
+  event: PlanEvent,
+  repoName: string,
+  nextId: () => number,
+): PlanState {
+  switch (event.type) {
+    case "started": {
+      return {
+        phase: "running",
+        repoPath: event.repoPath,
+        repoName: event.repoName,
+        elapsedMs: 0,
+        messages: [],
+      };
+    }
+    case "progress": {
+      if (prev.phase !== "running") return prev;
+      return { ...prev, elapsedMs: event.durationMs };
+    }
+    case "sdk_message": {
+      if (prev.phase !== "running") return prev;
+      const entry: MessageEntry = {
+        id: nextId(),
+        subtype: event.subtype,
+        summary: event.summary,
+        ts: event.ts,
+      };
+      return { ...prev, messages: [...prev.messages, entry] };
+    }
+    case "done": {
+      if (prev.phase !== "running") return prev;
+      return {
+        phase: "done",
+        repoPath: prev.repoPath,
+        repoName: prev.repoName,
+        messages: prev.messages,
+        planPath: event.planPath,
+        planMarkdown: event.planMarkdown,
+        taskCount: event.taskCount,
+        estimatedTokens: event.estimatedTokens,
+        estimatedDurationMs: event.estimatedDurationMs,
+        tokensUsed: event.tokensUsed,
+        durationMs: event.durationMs,
+        approvedAt: null,
+      };
+    }
+    case "error": {
+      const messages = prev.phase === "running" ? prev.messages : [];
+      const repoPath = prev.phase !== "idle" ? prev.repoPath : "";
+      return { phase: "error", repoPath, repoName, message: event.message, messages };
+    }
+  }
 }
 
 function reduceAnalyze(
