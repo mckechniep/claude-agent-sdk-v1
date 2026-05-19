@@ -416,10 +416,7 @@ export async function handleApproveProposal(payload: unknown): Promise<RouteResp
     return { status: 400, body: { error: "invalid body", issues: parsed.error.issues } };
   }
   try {
-    const markerPath = await writeProposalApproval(
-      parsed.data.repoPath,
-      parsed.data.proposalPath,
-    );
+    const markerPath = await writeProposalApproval(parsed.data.repoPath, parsed.data.proposalPath);
     return { status: 200, body: { ok: true, markerPath } };
   } catch (err) {
     return { status: 500, body: { error: err instanceof Error ? err.message : String(err) } };
