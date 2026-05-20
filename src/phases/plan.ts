@@ -31,9 +31,7 @@ export interface PlanResult {
   durationMs: number;
 }
 
-export async function* planStream(
-  params: PlanParams,
-): AsyncGenerator<QueryEvent, PlanResult> {
+export async function* planStream(params: PlanParams): AsyncGenerator<QueryEvent, PlanResult> {
   // Pick up the prior plan if one exists — gives the model context for
   // refinement, lets it preserve task UUIDs across iterations, and avoids
   // the model getting confused by a same-named file in .agent/.
