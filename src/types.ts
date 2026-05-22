@@ -28,6 +28,13 @@ export const TASK_STATUSES = ["pending", "in_progress", "completed", "failed", "
 export const STACK_IDS = ["jsts", "python", "generic"] as const;
 export const ON_FAILURE_VALUES = ["stop", "skip-task", "skip-repo", "retry"] as const;
 export const TEST_GATE_VALUES = ["required", "skip", "per-repo"] as const;
+export const AUTONOMY_MODES = ["manual", "batched", "yolo"] as const;
+export const MODEL_TIERS = ["thorough", "balanced", "fast", "custom"] as const;
+export const MODEL_IDS = [
+  "claude-sonnet-4-6",
+  "claude-haiku-4-5-20251001",
+  "claude-opus-4-7",
+] as const;
 
 export type AuthMode = (typeof AUTH_MODES)[number];
 
@@ -45,10 +52,20 @@ export type OnFailure = (typeof ON_FAILURE_VALUES)[number];
 
 export type TestGate = (typeof TEST_GATE_VALUES)[number];
 
+export type AutonomyMode = (typeof AUTONOMY_MODES)[number];
+
+export type ModelTier = (typeof MODEL_TIERS)[number];
+
+export type ModelId = (typeof MODEL_IDS)[number];
+
+export const ModelIdSchema = z.enum(MODEL_IDS);
+
 export const RunConfigSchema = z.object({
   targetDir: z.string(),
+  autonomy: z.enum(AUTONOMY_MODES).default("batched"),
+  tier: z.enum(MODEL_TIERS).default("balanced"),
   concurrency: z.number().int().positive(),
-  checkpointEvery: z.number(), // Infinity for --yolo, encoded as Number.MAX_SAFE_INTEGER on disk
+  checkpointEvery: z.number(),
   onFailure: z.enum(ON_FAILURE_VALUES),
   maxRetries: z.number().int().nonnegative(),
   maxTokens: z.number().int().positive().optional(),
@@ -56,10 +73,10 @@ export const RunConfigSchema = z.object({
   testGate: z.enum(TEST_GATE_VALUES),
   testTimeoutMs: z.number().int().positive(),
   model: z.object({
-    default: z.string(),
-    analyze: z.string().optional(),
-    plan: z.string().optional(),
-    execute: z.string().optional(),
+    default: ModelIdSchema,
+    analyze: ModelIdSchema.optional(),
+    plan: ModelIdSchema.optional(),
+    execute: ModelIdSchema.optional(),
   }),
   include: z.array(z.string()).optional(),
   exclude: z.array(z.string()).optional(),

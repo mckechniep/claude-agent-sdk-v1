@@ -22,8 +22,10 @@ async function makeFixtureRepo(parent: string, name: string): Promise<string> {
 
 const baseConfig = (target: string): RunConfig => ({
   targetDir: target,
+  autonomy: "yolo",
+  tier: "balanced",
   concurrency: 1,
-  checkpointEvery: Number.MAX_SAFE_INTEGER, // yolo
+  checkpointEvery: Number.MAX_SAFE_INTEGER,
   onFailure: "skip-repo",
   maxRetries: 0,
   testGate: "skip",
@@ -50,11 +52,13 @@ describe("runOrchestration", () => {
 
     const fakeAnalyze = vi.fn(async () => ({
       proposalPath: "/dev/null",
+      proposalMarkdown: "",
       tokensUsed: 100,
       durationMs: 10,
     }));
     const fakePlan = vi.fn(async () => ({
       planPath: "/dev/null",
+      planMarkdown: "",
       taskCount: 1,
       tasks: [
         {
