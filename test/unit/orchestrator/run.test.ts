@@ -97,7 +97,6 @@ describe("runOrchestration", () => {
       selectRepos: async (repos) => repos.map((r) => r.path),
       proposalGate: async () => "accept",
       planGate: async () => "accept",
-      checkpoint: async () => "continue",
       runConfirmation: async () => true,
       authConfirmation: async () => true,
       analyzeFn: fakeAnalyze,
