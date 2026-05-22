@@ -1,8 +1,6 @@
 import { join } from "node:path";
 import { ulid } from "ulid";
-import {
-  applyAuthMode,
-} from "../auth/mode.js";
+import { applyAuthMode } from "../auth/mode.js";
 import { discoverRepos, type DiscoveredRepo } from "../phases/discover.js";
 import { analyze } from "../phases/analyze.js";
 import { plan } from "../phases/plan.js";
@@ -10,15 +8,8 @@ import { execute } from "../phases/execute.js";
 import { getStackProfile } from "../stack/detect.js";
 import { BudgetTracker } from "./budget.js";
 import { runWithConcurrency } from "./concurrency.js";
-import {
-  createRunDir,
-  saveManifest,
-} from "../state/runIndex.js";
-import {
-  ensureAgentDir,
-  ensureGitignore,
-  saveRepoState,
-} from "../state/repoState.js";
+import { createRunDir, saveManifest } from "../state/runIndex.js";
+import { ensureAgentDir, ensureGitignore, saveRepoState } from "../state/repoState.js";
 import { appendLogEvent } from "../state/runLog.js";
 import { writeAtomic } from "../state/atomicWrite.js";
 import {
@@ -274,7 +265,9 @@ export async function runOrchestration(p: OrchestrationParams): Promise<RunManif
       await persist();
     });
 
-    manifest.status = manifest.repos.every((r) => r.status === "completed" || r.status === "skipped")
+    manifest.status = manifest.repos.every(
+      (r) => r.status === "completed" || r.status === "skipped",
+    )
       ? "completed"
       : "failed";
     await persist();
