@@ -251,8 +251,8 @@ describe("step", () => {
   });
 
   it("throws when first step() call omits config or selectedRepos", async () => {
-    await expect(
-      step({ runId: ulid(), stateRoot, authMode: "api" }),
-    ).rejects.toThrow(/first call requires/);
+    await expect(step({ runId: ulid(), stateRoot, authMode: "api" })).rejects.toThrow(
+      /first call requires/,
+    );
   });
 });

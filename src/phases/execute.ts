@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { runQuery, runQueryStream, type QueryEvent } from "../sdk/query.js";
 import type { BudgetTracker } from "../orchestrator/budget.js";
-import { renderExecutePrompt } from "../sdk/prompts/execute.js";
+import { renderExecutePromptParts } from "../sdk/prompts/execute.js";
 import {
   commitWithMessage,
   ensureBranch,
@@ -51,7 +51,7 @@ export async function* executeStream(
 
   while (attempts < maxAttempts) {
     attempts += 1;
-    const prompt = renderExecutePrompt({
+    const { systemPrompt, userPrompt } = renderExecutePromptParts({
       repoPath: params.repoPath,
       repoName: params.repoName,
       stackProfile: params.stackProfile,
@@ -68,7 +68,8 @@ export async function* executeStream(
     });
 
     const gen = runQueryStream({
-      prompt,
+      prompt: userPrompt,
+      systemPrompt,
       allowedTools: EXECUTOR_TOOLS,
       cwd: params.repoPath,
       tracker: params.tracker,

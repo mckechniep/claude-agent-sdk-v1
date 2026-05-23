@@ -6,7 +6,7 @@ export interface QueryParams {
   cwd: string;
   tracker: BudgetTracker;
   model?: string;
-  systemPrompt?: string;
+  systemPrompt?: string | string[];
   queryFn?: AsyncGeneratorFn;
 }
 
@@ -14,6 +14,8 @@ export interface QueryResult {
   messages: unknown[];
   finalText: string;
   tokensUsed: number;
+  cacheCreationInputTokens: number;
+  cacheReadInputTokens: number;
   durationMs: number;
 }
 
@@ -21,7 +23,12 @@ export interface SdkStreamMessage {
   type: string;
   message?: { content: Array<{ type: string; text?: string }> };
   result?: string;
-  usage?: { input_tokens: number; output_tokens: number };
+  usage?: {
+    input_tokens: number;
+    output_tokens: number;
+    cache_creation_input_tokens?: number;
+    cache_read_input_tokens?: number;
+  };
 }
 
 export type QueryEvent =
@@ -47,6 +54,8 @@ export async function* runQueryStream(
   let finalText = "";
   let inputTokens = 0;
   let outputTokens = 0;
+  let cacheCreationInputTokens = 0;
+  let cacheReadInputTokens = 0;
 
   yield { type: "started", ts: startedAt };
 
@@ -67,6 +76,8 @@ export async function* runQueryStream(
       finalText = msg.result ?? "";
       inputTokens = msg.usage?.input_tokens ?? 0;
       outputTokens = msg.usage?.output_tokens ?? 0;
+      cacheCreationInputTokens = msg.usage?.cache_creation_input_tokens ?? 0;
+      cacheReadInputTokens = msg.usage?.cache_read_input_tokens ?? 0;
     }
     params.tracker.check();
   }
@@ -78,6 +89,8 @@ export async function* runQueryStream(
     messages,
     finalText,
     tokensUsed,
+    cacheCreationInputTokens,
+    cacheReadInputTokens,
     durationMs: Date.now() - startedAt,
   };
 }

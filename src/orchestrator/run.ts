@@ -236,9 +236,7 @@ async function advancePreflightOnce(
   }
 
   // No more pending; check if preflight is complete
-  const reposNeedingApproval = manifest.repos.filter(
-    (r) => r.status === "awaiting-plan-approval",
-  );
+  const reposNeedingApproval = manifest.repos.filter((r) => r.status === "awaiting-plan-approval");
   if (reposNeedingApproval.length === 0) {
     // All repos finished preflight via approval, skip, or fail
     manifest.status = "awaiting-run-confirmation";
@@ -332,9 +330,7 @@ async function advanceRunning(
     await persist();
   });
 
-  manifest.status = manifest.repos.every(
-    (r) => r.status === "completed" || r.status === "skipped",
-  )
+  manifest.status = manifest.repos.every((r) => r.status === "completed" || r.status === "skipped")
     ? "completed"
     : "failed";
   await persist();
