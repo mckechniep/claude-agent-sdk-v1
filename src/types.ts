@@ -113,6 +113,8 @@ export const RepoEntrySchema = z.object({
 });
 export type RepoEntry = z.infer<typeof RepoEntrySchema>;
 
+export const UlidString = z.string().regex(/^[0-9A-HJKMNP-TV-Z]{26}$/, "expected a ULID");
+
 export const BudgetStateSchema = z.object({
   tokensUsed: z.number().int().nonnegative(),
   startedAt: z.string().datetime(),
@@ -122,7 +124,7 @@ export const BudgetStateSchema = z.object({
 export type BudgetState = z.infer<typeof BudgetStateSchema>;
 
 export const RunManifestSchema = z.object({
-  runId: z.string().regex(/^[0-9A-HJKMNP-TV-Z]{26}$/, "expected a ULID"),
+  runId: UlidString,
   createdAt: z.string().datetime(),
   authMode: z.enum(AUTH_MODES),
   config: RunConfigSchema,
@@ -137,7 +139,7 @@ export const LogEventSchema = z.discriminatedUnion("type", [
   z.object({
     ts: z.string().datetime(),
     type: z.literal("run_started"),
-    runId: z.string().regex(/^[0-9A-HJKMNP-TV-Z]{26}$/, "expected a ULID"),
+    runId: UlidString,
   }),
   z.object({
     ts: z.string().datetime(),
@@ -199,6 +201,43 @@ export const LogEventSchema = z.discriminatedUnion("type", [
     type: z.literal("run_finalized"),
     status: z.enum(["completed", "failed"]),
     durationMs: z.number().int().nonnegative(),
+  }),
+  z.object({
+    ts: z.string().datetime(),
+    type: z.literal("run_loop_started"),
+    runId: UlidString,
+  }),
+  z.object({
+    ts: z.string().datetime(),
+    type: z.literal("run_loop_paused"),
+    runId: UlidString,
+  }),
+  z.object({
+    ts: z.string().datetime(),
+    type: z.literal("run_loop_completed"),
+    runId: UlidString,
+  }),
+  z.object({
+    ts: z.string().datetime(),
+    type: z.literal("run_loop_failed"),
+    runId: UlidString,
+  }),
+  z.object({
+    ts: z.string().datetime(),
+    type: z.literal("run_loop_aborted"),
+    runId: UlidString,
+  }),
+  z.object({
+    ts: z.string().datetime(),
+    type: z.literal("run_loop_awaiting_decision"),
+    runId: UlidString,
+    status: z.enum(RUN_STATUSES),
+  }),
+  z.object({
+    ts: z.string().datetime(),
+    type: z.literal("run_loop_error"),
+    runId: UlidString,
+    message: z.string(),
   }),
 ]);
 export type LogEvent = z.infer<typeof LogEventSchema>;
