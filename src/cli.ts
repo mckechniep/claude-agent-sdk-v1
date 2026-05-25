@@ -1,6 +1,11 @@
 #!/usr/bin/env node
 import { Command } from "commander";
 import { runCommand } from "./commands/run.js";
+import { resumeCommand } from "./commands/resume.js";
+import { statusCommand } from "./commands/status.js";
+import { runsListCommand, runsShowCommand } from "./commands/runs.js";
+import { doctorCommand } from "./commands/doctor.js";
+import { initCommand } from "./commands/init.js";
 
 const program = new Command();
 program
@@ -28,6 +33,33 @@ program
   .option("--non-interactive", "force non-interactive mode")
   .option("--dry-run", "skip execution; analyze + plan only")
   .action(runCommand);
+
+program
+  .command("resume [runId]")
+  .description("Resume a paused run")
+  .action((runId: string | undefined) => resumeCommand({ runId }));
+
+program
+  .command("status")
+  .description("Show status (in-repo or global)")
+  .action(statusCommand);
+
+const runsCmd = program.command("runs").description("Manage runs");
+runsCmd.command("list").action(runsListCommand);
+runsCmd.command("show <runId>").action(runsShowCommand);
+
+program
+  .command("doctor [runId]")
+  .description("Inspect / repair state")
+  .option("--repair", "interactive repair (currently scan-only)")
+  .action((runId: string | undefined, opts: { repair?: boolean }) =>
+    doctorCommand({ runId, repair: opts.repair }),
+  );
+
+program
+  .command("init [dir]")
+  .description("Bootstrap config + .agentignore")
+  .action((dir: string | undefined) => initCommand({ dir }));
 
 program.parseAsync(process.argv).catch((err: unknown) => {
   const message = err instanceof Error ? err.message : String(err);
