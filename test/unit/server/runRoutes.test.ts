@@ -1,0 +1,210 @@
+import { describe, expect, it, beforeEach, afterEach } from "vitest";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import {
+  handleStartRun,
+  handleStepRun,
+  handleSubmitDecisions,
+  handleGetManifest,
+  handleResumeRun,
+  __clearPendingDecisionsForTests,
+} from "../../../src/server/runRoutes.js";
+import { SCHEMA_VERSION, type RunManifest, type RunStatus } from "../../../src/types.js";
+import { defaultStateRoot } from "../../../src/state/runIndex.js";
+
+const VALID_RUN_ID = "01HKQR3Z8MAAAAAAAAAAAAAAAA";
+const BAD_RUN_ID = "not-a-ulid";
+const ORIGINAL_HOME = process.env.HOME;
+
+function makeManifest(status: RunStatus): RunManifest {
+  return {
+    runId: VALID_RUN_ID,
+    createdAt: "2026-05-24T00:00:00.000Z",
+    authMode: "subscription",
+    config: {
+      targetDir: "/x",
+      autonomy: "manual",
+      tier: "balanced",
+      concurrency: 1,
+      checkpointEvery: 1,
+      onFailure: "skip-repo",
+      maxRetries: 1,
+      testGate: "skip",
+      testTimeoutMs: 300_000,
+      model: { default: "claude-sonnet-4-6" },
+    },
+    repos: [],
+    budget: { tokensUsed: 0, startedAt: "2026-05-24T00:00:00.000Z" },
+    status,
+    schemaVersion: SCHEMA_VERSION,
+  };
+}
+
+describe("runRoutes", () => {
+  let tmpHome: string;
+
+  beforeEach(async () => {
+    __clearPendingDecisionsForTests();
+    // Redirect defaultStateRoot() to a temp dir for each test via HOME.
+    tmpHome = await mkdtemp(join(tmpdir(), "runroutes-"));
+    process.env.HOME = tmpHome;
+  });
+
+  afterEach(async () => {
+    process.env.HOME = ORIGINAL_HOME;
+    await rm(tmpHome, { recursive: true, force: true });
+  });
+
+  describe("handleStartRun", () => {
+    it("rejects invalid body shape", async () => {
+      const res = await handleStartRun({ nope: true }, { originalApiKey: undefined });
+      expect(res.status).toBe(400);
+      const body = res.body as { error: string };
+      expect(body.error).toBe("invalid body");
+    });
+
+    it("rejects api auth when no key was set at server boot", async () => {
+      const res = await handleStartRun(
+        {
+          authMode: "api",
+          config: {
+            targetDir: "/x",
+            concurrency: 1,
+            checkpointEvery: 1,
+            onFailure: "skip-repo",
+            maxRetries: 1,
+            testGate: "skip",
+            testTimeoutMs: 300_000,
+            model: { default: "claude-sonnet-4-6" },
+          },
+          selectedRepos: [
+            {
+              path: "/x/foo",
+              name: "foo",
+              stack: "jsts",
+              hasReadme: true,
+              hasTests: false,
+              lastCommitDate: null,
+              isDirty: false,
+            },
+          ],
+        },
+        { originalApiKey: undefined },
+      );
+      expect(res.status).toBe(400);
+      const body = res.body as { error: string };
+      expect(body.error).toContain("api mode selected");
+    });
+  });
+
+  describe("handleStepRun", () => {
+    it("rejects invalid runId", async () => {
+      const res = await handleStepRun(BAD_RUN_ID, {}, { originalApiKey: undefined });
+      expect(res.status).toBe(400);
+      const body = res.body as { error: string };
+      expect(body.error).toBe("invalid runId");
+    });
+
+    it("returns 404 when manifest does not exist", async () => {
+      const res = await handleStepRun(VALID_RUN_ID, {}, { originalApiKey: undefined });
+      expect(res.status).toBe(404);
+    });
+
+    it("rejects invalid body when runId is valid", async () => {
+      // Even with no manifest on disk, body parsing happens first; here we
+      // send a malformed decisions block to confirm 400 fires before 404.
+      const res = await handleStepRun(
+        VALID_RUN_ID,
+        { decisions: { proposals: { "/p": "not-a-valid-action" } } },
+        { originalApiKey: undefined },
+      );
+      expect(res.status).toBe(400);
+    });
+  });
+
+  describe("handleSubmitDecisions", () => {
+    it("rejects invalid runId", async () => {
+      const res = await handleSubmitDecisions(BAD_RUN_ID, {});
+      expect(res.status).toBe(400);
+    });
+
+    it("rejects invalid decision shape", async () => {
+      const res = await handleSubmitDecisions(VALID_RUN_ID, {
+        plans: { "/p": "not-a-valid-action" },
+      });
+      expect(res.status).toBe(400);
+    });
+
+    it("accepts valid decisions and returns 202", async () => {
+      const res = await handleSubmitDecisions(VALID_RUN_ID, {
+        runConfirmed: true,
+        proposals: { "/x/foo": "accept" },
+      });
+      expect(res.status).toBe(202);
+      const body = res.body as { ok: boolean; runId: string; pending: unknown };
+      expect(body.ok).toBe(true);
+      expect(body.runId).toBe(VALID_RUN_ID);
+    });
+
+    it("merges subsequent decision submissions", async () => {
+      await handleSubmitDecisions(VALID_RUN_ID, { proposals: { "/x/a": "accept" } });
+      const res = await handleSubmitDecisions(VALID_RUN_ID, { proposals: { "/x/b": "reject" } });
+      expect(res.status).toBe(202);
+      const body = res.body as {
+        pending: { proposals?: Record<string, string> };
+      };
+      expect(body.pending.proposals).toEqual({ "/x/a": "accept", "/x/b": "reject" });
+    });
+  });
+
+  describe("handleGetManifest", () => {
+    it("rejects invalid runId", async () => {
+      const res = await handleGetManifest(BAD_RUN_ID);
+      expect(res.status).toBe(400);
+    });
+
+    it("returns 404 when manifest does not exist", async () => {
+      const res = await handleGetManifest(VALID_RUN_ID);
+      expect(res.status).toBe(404);
+    });
+
+    it("returns 200 + manifest + loopActive when manifest exists", async () => {
+      const stateRoot = defaultStateRoot();
+      const runDir = join(stateRoot, VALID_RUN_ID);
+      await mkdir(runDir, { recursive: true });
+      await writeFile(join(runDir, "manifest.json"), JSON.stringify(makeManifest("running")));
+
+      const res = await handleGetManifest(VALID_RUN_ID);
+      expect(res.status).toBe(200);
+      const body = res.body as { manifest: RunManifest; loopActive: boolean };
+      expect(body.manifest.runId).toBe(VALID_RUN_ID);
+      expect(body.loopActive).toBe(false);
+    });
+  });
+
+  describe("handleResumeRun", () => {
+    it("rejects invalid runId", async () => {
+      const res = await handleResumeRun(BAD_RUN_ID, { originalApiKey: undefined });
+      expect(res.status).toBe(400);
+    });
+
+    it("returns 404 when manifest does not exist", async () => {
+      const res = await handleResumeRun(VALID_RUN_ID, { originalApiKey: undefined });
+      expect(res.status).toBe(404);
+    });
+
+    it("returns 409 when manifest is not in paused state", async () => {
+      const stateRoot = defaultStateRoot();
+      const runDir = join(stateRoot, VALID_RUN_ID);
+      await mkdir(runDir, { recursive: true });
+      await writeFile(join(runDir, "manifest.json"), JSON.stringify(makeManifest("running")));
+
+      const res = await handleResumeRun(VALID_RUN_ID, { originalApiKey: undefined });
+      expect(res.status).toBe(409);
+      const body = res.body as { error: string };
+      expect(body.error).toContain("not");
+      expect(body.error).toContain("paused");
+    });
+  });
+});
