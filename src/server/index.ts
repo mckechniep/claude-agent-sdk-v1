@@ -14,6 +14,13 @@ import {
   type RouteResponse,
   type ServerDeps,
 } from "./routes.js";
+import {
+  handleGetManifest,
+  handleResumeRun,
+  handleStartRun,
+  handleStepRun,
+  handleSubmitDecisions,
+} from "./runRoutes.js";
 
 const DEFAULT_PORT = 3737;
 const ALLOWED_ORIGINS = new Set(["http://localhost:5173", "http://127.0.0.1:5173"]);
@@ -49,6 +56,14 @@ function send(res: ServerResponse, payload: RouteResponse): void {
   res.statusCode = payload.status;
   res.setHeader("Content-Type", "application/json; charset=utf-8");
   res.end(JSON.stringify(payload.body));
+}
+
+// Matches /api/run/:ulid/:action where ulid is the Crockford-base-32 26-char
+// form. Returns null if the path doesn't match.
+function matchRunAction(path: string): { runId: string; action: string } | null {
+  const m = path.match(/^\/api\/run\/([0-9A-HJKMNP-TV-Z]{26})\/([a-z]+)$/);
+  if (!m || !m[1] || !m[2]) return null;
+  return { runId: m[1], action: m[2] };
 }
 
 async function route(req: IncomingMessage, res: ServerResponse, deps: ServerDeps): Promise<void> {
@@ -102,6 +117,30 @@ async function route(req: IncomingMessage, res: ServerResponse, deps: ServerDeps
     if (method === "GET" && path === "/api/plan/approval") {
       return send(res, await handleGetPlanApproval(url.searchParams));
     }
+
+    if (method === "POST" && path === "/api/run/start") {
+      const body = await readJsonBody(req);
+      return send(res, await handleStartRun(body, deps));
+    }
+    const runAction = matchRunAction(path);
+    if (runAction) {
+      const { runId, action } = runAction;
+      if (method === "POST" && action === "step") {
+        const body = await readJsonBody(req);
+        return send(res, await handleStepRun(runId, body, deps));
+      }
+      if (method === "POST" && action === "decisions") {
+        const body = await readJsonBody(req);
+        return send(res, await handleSubmitDecisions(runId, body));
+      }
+      if (method === "GET" && action === "manifest") {
+        return send(res, await handleGetManifest(runId));
+      }
+      if (method === "POST" && action === "resume") {
+        return send(res, await handleResumeRun(runId, deps));
+      }
+    }
+
     send(res, { status: 404, body: { error: "not found", path } });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
