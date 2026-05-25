@@ -39,10 +39,7 @@ program
   .description("Resume a paused run")
   .action((runId: string | undefined) => resumeCommand({ runId }));
 
-program
-  .command("status")
-  .description("Show status (in-repo or global)")
-  .action(statusCommand);
+program.command("status").description("Show status (in-repo or global)").action(statusCommand);
 
 const runsCmd = program.command("runs").description("Manage runs");
 runsCmd.command("list").action(runsListCommand);

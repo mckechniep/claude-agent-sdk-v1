@@ -62,7 +62,9 @@ export async function runCommand(opts: RunCommandOpts): Promise<void> {
     exclude: opts.exclude,
   });
   if (!configParse.success) {
-    console.error(`Invalid configuration: ${configParse.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ")}`);
+    console.error(
+      `Invalid configuration: ${configParse.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ")}`,
+    );
     process.exit(4);
   }
   const config: RunConfig = configParse.data;
@@ -79,9 +81,7 @@ export async function runCommand(opts: RunCommandOpts): Promise<void> {
     proposalGate: async () => (interactive ? proposalGate() : "accept"),
     planGate: async () => (interactive ? planGate() : "accept"),
     runConfirmation: async () =>
-      interactive
-        ? confirmPrompt("Proceed with execution across all selected repos?", true)
-        : true,
+      interactive ? confirmPrompt("Proceed with execution across all selected repos?", true) : true,
     authConfirmation: async (warns) =>
       interactive ? confirmPrompt(warns.join("\n") + "\nContinue?", true) : true,
   });

@@ -22,8 +22,12 @@ export async function resumeCommand(opts: ResumeOpts): Promise<void> {
     }
     runId = paused[0]!.runId;
   }
-  console.warn(`Resume support is incremental — for now, the orchestrator must be re-invoked manually.`);
+  console.warn(
+    `Resume support is incremental — for now, the orchestrator must be re-invoked manually.`,
+  );
   console.warn(`Target run: ${runId}`);
-  console.warn(`Implementation note: full resume requires walking next-non-terminal logic; tracked for the resume task.`);
+  console.warn(
+    `Implementation note: full resume requires walking next-non-terminal logic; tracked for the resume task.`,
+  );
   process.exit(0);
 }
