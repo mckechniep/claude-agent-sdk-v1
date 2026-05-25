@@ -1,3 +1,36 @@
 #!/usr/bin/env node
-console.error("agent-orchestrator: not yet implemented");
-process.exit(1);
+import { Command } from "commander";
+import { runCommand } from "./commands/run.js";
+
+const program = new Command();
+program
+  .name("agent")
+  .description("Agent Orchestrator — run an agentic workflow against local git repos")
+  .version("0.1.0");
+
+program
+  .command("run")
+  .description("Start a new orchestration run")
+  .option("--target <dir>", "directory to scan for repos", process.cwd())
+  .option("--auth <mode>", "auth mode: api | subscription")
+  .option("--concurrency <n>", "parallel repos", "1")
+  .option("--checkpoint-every <n>", "pause every N tasks", "1")
+  .option("--yolo", "skip checkpoints (equivalent to --checkpoint-every=∞)")
+  .option("--max-tokens <n>", "hard cap on total tokens")
+  .option("--max-duration <dur>", "hard cap on wall-clock (e.g. 2h, 90m)")
+  .option("--on-failure <mode>", "stop|skip-task|skip-repo|retry", "skip-repo")
+  .option("--max-retries <n>", "retry attempts before failure handling", "1")
+  .option("--test-gate <mode>", "required|skip|per-repo", "per-repo")
+  .option("--test-timeout <dur>", "max time per test run", "5m")
+  .option("--model <id>", "default model", "claude-sonnet-4-6")
+  .option("--include <glob...>", "whitelist patterns")
+  .option("--exclude <glob...>", "blacklist patterns")
+  .option("--non-interactive", "force non-interactive mode")
+  .option("--dry-run", "skip execution; analyze + plan only")
+  .action(runCommand);
+
+program.parseAsync(process.argv).catch((err: unknown) => {
+  const message = err instanceof Error ? err.message : String(err);
+  console.error("Error:", message);
+  process.exit(1);
+});
