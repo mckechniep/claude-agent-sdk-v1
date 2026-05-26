@@ -1,3 +1,4 @@
+import type { IncomingMessage, ServerResponse } from "node:http";
 import { z } from "zod";
 import { ulid } from "ulid";
 import { join } from "node:path";
@@ -6,6 +7,7 @@ import type { StepParams } from "../orchestrator/run.js";
 import { defaultStateRoot, loadManifest } from "../state/runIndex.js";
 import { readLogTailFromByte, runLogPath } from "../state/runLog.js";
 import { applyAuthMode } from "../auth/mode.js";
+import { openSseStream } from "./sse.js";
 import {
   AUTH_MODES,
   RunConfigSchema,
@@ -233,6 +235,78 @@ export async function handleGetLog(
     return { status: 404, body: { error: `log not found for run ${runId}` } };
   }
   return { status: 200, body: { events: tail.events, nextByte: tail.nextByte } };
+}
+
+// Tunables for the log SSE stream. Polling cadence is a soft-realtime
+// compromise: 250ms catches new lines fast enough for human perception
+// while staying friendly on WSL2 cross-FS where fs.watch is unreliable.
+const LOG_STREAM_POLL_MS = 250;
+const LOG_STREAM_HEARTBEAT_MS = 1500;
+
+export async function handleStreamLog(
+  req: IncomingMessage,
+  res: ServerResponse,
+  runId: string,
+  query: URLSearchParams,
+): Promise<void> {
+  if (!isValidUlid(runId)) {
+    res.statusCode = 400;
+    res.setHeader("Content-Type", "application/json");
+    res.end(JSON.stringify({ error: "invalid runId" }));
+    return;
+  }
+  const fromByteRaw = query.get("fromByte");
+  const fromByte = fromByteRaw === null ? 0 : Number(fromByteRaw);
+  if (!Number.isFinite(fromByte) || fromByte < 0 || !Number.isInteger(fromByte)) {
+    res.statusCode = 400;
+    res.setHeader("Content-Type", "application/json");
+    res.end(JSON.stringify({ error: "fromByte must be a non-negative integer" }));
+    return;
+  }
+
+  const path = runLogPath(defaultStateRoot(), runId);
+  const sse = openSseStream(req, res);
+  let cursor = fromByte;
+  let lastHeartbeat = Date.now();
+  let poll: NodeJS.Timeout | undefined;
+  let stopped = false;
+
+  const stop = (): void => {
+    if (stopped) return;
+    stopped = true;
+    if (poll) clearInterval(poll);
+    sse.close();
+  };
+
+  sse.onClientClose(stop);
+
+  const tick = async (): Promise<void> => {
+    if (sse.closed() || stopped) return;
+    try {
+      const tail = await readLogTailFromByte(path, cursor);
+      if (tail.events.length > 0) {
+        sse.send("tail", { events: tail.events, nextByte: tail.nextByte });
+        cursor = tail.nextByte;
+        lastHeartbeat = Date.now();
+        return;
+      }
+      if (Date.now() - lastHeartbeat >= LOG_STREAM_HEARTBEAT_MS) {
+        sse.send("idle", { nextByte: cursor, fileExists: tail.fileExists });
+        lastHeartbeat = Date.now();
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (!sse.closed()) sse.send("error", { message });
+      stop();
+    }
+  };
+
+  // Initial replay before subscribing to deltas.
+  await tick();
+  if (stopped) return;
+  poll = setInterval(() => {
+    void tick();
+  }, LOG_STREAM_POLL_MS);
 }
 
 export async function handleResumeRun(runId: string, deps: ServerDeps): Promise<RouteResponse> {

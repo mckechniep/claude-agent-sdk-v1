@@ -2,12 +2,15 @@ import { describe, expect, it, beforeEach, afterEach } from "vitest";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { IncomingMessage, ServerResponse } from "node:http";
+import { EventEmitter } from "node:events";
 import {
   handleStartRun,
   handleStepRun,
   handleSubmitDecisions,
   handleGetManifest,
   handleGetLog,
+  handleStreamLog,
   handleResumeRun,
   __clearPendingDecisionsForTests,
 } from "../../../src/server/runRoutes.js";
@@ -299,6 +302,57 @@ describe("runRoutes", () => {
       const body = res.body as { events: unknown[]; nextByte: number };
       expect(body.events).toHaveLength(1);
       expect(body.nextByte).toBe(Buffer.byteLength(complete) + 1);
+    });
+  });
+
+  describe("handleStreamLog", () => {
+    // Minimal req/res doubles — enough to drive the validation-failure paths
+    // without spinning up a real http server. Full streaming behavior is
+    // covered by readLogTailFromByte's unit tests and manual smoke (F1).
+    function makeMocks(): {
+      req: IncomingMessage;
+      res: ServerResponse & { _status: number; _body: string };
+    } {
+      const req = new EventEmitter() as IncomingMessage;
+      const writes: string[] = [];
+      const res = Object.assign(new EventEmitter(), {
+        statusCode: 200,
+        writableEnded: false,
+        _body: "",
+        _status: 200,
+        setHeader() {},
+        flushHeaders() {},
+        write(chunk: string) {
+          writes.push(chunk);
+          return true;
+        },
+        end(payload?: string) {
+          this.writableEnded = true;
+          this._body = (writes.join("") + (payload ?? "")).trim();
+          this._status = this.statusCode;
+        },
+      }) as unknown as ServerResponse & { _status: number; _body: string };
+      return { req, res };
+    }
+
+    it("rejects invalid runId with 400", async () => {
+      const { req, res } = makeMocks();
+      await handleStreamLog(req, res, "not-a-ulid", new URLSearchParams());
+      expect(res._status).toBe(400);
+      expect(res._body).toContain("invalid runId");
+    });
+
+    it("rejects negative fromByte with 400", async () => {
+      const { req, res } = makeMocks();
+      await handleStreamLog(req, res, VALID_RUN_ID, new URLSearchParams({ fromByte: "-1" }));
+      expect(res._status).toBe(400);
+      expect(res._body).toContain("fromByte");
+    });
+
+    it("rejects non-integer fromByte with 400", async () => {
+      const { req, res } = makeMocks();
+      await handleStreamLog(req, res, VALID_RUN_ID, new URLSearchParams({ fromByte: "1.5" }));
+      expect(res._status).toBe(400);
     });
   });
 

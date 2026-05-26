@@ -20,6 +20,7 @@ import {
   handleResumeRun,
   handleStartRun,
   handleStepRun,
+  handleStreamLog,
   handleSubmitDecisions,
 } from "./runRoutes.js";
 
@@ -65,6 +66,13 @@ function matchRunAction(path: string): { runId: string; action: string } | null 
   const m = path.match(/^\/api\/run\/([0-9A-HJKMNP-TV-Z]{26})\/([a-z]+)$/);
   if (!m || !m[1] || !m[2]) return null;
   return { runId: m[1], action: m[2] };
+}
+
+// Matches /api/run/:ulid/log/stream — the only nested action; broken out
+// rather than generalizing matchRunAction to keep that regex simple.
+function matchRunLogStream(path: string): string | null {
+  const m = path.match(/^\/api\/run\/([0-9A-HJKMNP-TV-Z]{26})\/log\/stream$/);
+  return m && m[1] ? m[1] : null;
 }
 
 async function route(req: IncomingMessage, res: ServerResponse, deps: ServerDeps): Promise<void> {
@@ -122,6 +130,10 @@ async function route(req: IncomingMessage, res: ServerResponse, deps: ServerDeps
     if (method === "POST" && path === "/api/run/start") {
       const body = await readJsonBody(req);
       return send(res, await handleStartRun(body, deps));
+    }
+    const logStreamRunId = matchRunLogStream(path);
+    if (method === "GET" && logStreamRunId) {
+      return handleStreamLog(req, res, logStreamRunId, url.searchParams);
     }
     const runAction = matchRunAction(path);
     if (runAction) {
