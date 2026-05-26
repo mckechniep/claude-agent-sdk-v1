@@ -242,6 +242,37 @@ export const LogEventSchema = z.discriminatedUnion("type", [
 ]);
 export type LogEvent = z.infer<typeof LogEventSchema>;
 
+// ---------------------------------------------------------------------------
+// UI projection types
+//
+// These are not wire schemas — they're the shape the run-dashboard reducer
+// produces from a manifest snapshot + a tail of LogEvents. The reducer lives
+// in ui/src/runReducer.ts; types live here so server-side helpers (e.g. tests
+// that construct a fixture state) can share them.
+// ---------------------------------------------------------------------------
+
+export type LoopState = "idle" | "active" | "paused" | "completed" | "failed" | "aborted";
+
+export interface RunViewModel {
+  runId: string;
+  manifest: RunManifest;
+  loopState: LoopState;
+  currentRepoPath: string | null;
+  currentTaskId: string | null;
+  recentEvents: LogEvent[];
+  eventsByRepo: Record<string, LogEvent[]>;
+  eventsByTask: Record<string, LogEvent[]>;
+  lastEventTs: string | null;
+  byteCursor: number;
+  manifestFetchedAt: string | null;
+}
+
+// Discriminated update payload accepted by the reducer.
+export type RunUpdate =
+  | { kind: "event"; event: LogEvent }
+  | { kind: "manifest"; manifest: RunManifest; fetchedAt: string }
+  | { kind: "bookmark"; byteCursor: number };
+
 export class StateCorruption extends Error {
   constructor(
     public readonly path: string,
