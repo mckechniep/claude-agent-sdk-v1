@@ -183,9 +183,7 @@ describe("runLoop", () => {
   });
 
   it("rejects starting a second loop for the same runId", () => {
-    const stepFn = vi
-      .fn()
-      .mockImplementation(() => new Promise<RunManifest>(() => undefined)); // never resolves
+    const stepFn = vi.fn().mockImplementation(() => new Promise<RunManifest>(() => undefined)); // never resolves
 
     startBackgroundLoop({
       runId: RUN_ID,

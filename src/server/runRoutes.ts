@@ -75,10 +75,7 @@ function makeStepFactory(args: {
   };
 }
 
-export async function handleStartRun(
-  payload: unknown,
-  deps: ServerDeps,
-): Promise<RouteResponse> {
+export async function handleStartRun(payload: unknown, deps: ServerDeps): Promise<RouteResponse> {
   const parsed = StartRunBody.safeParse(payload);
   if (!parsed.success) {
     return { status: 400, body: { error: "invalid body", issues: parsed.error.issues } };
@@ -88,7 +85,9 @@ export async function handleStartRun(
   if (authMode === "api" && !deps.originalApiKey) {
     return {
       status: 400,
-      body: { error: "api mode selected but ANTHROPIC_API_KEY was not set when the server started" },
+      body: {
+        error: "api mode selected but ANTHROPIC_API_KEY was not set when the server started",
+      },
     };
   }
 
@@ -213,10 +212,7 @@ export async function handleGetManifest(runId: string): Promise<RouteResponse> {
   }
 }
 
-export async function handleResumeRun(
-  runId: string,
-  deps: ServerDeps,
-): Promise<RouteResponse> {
+export async function handleResumeRun(runId: string, deps: ServerDeps): Promise<RouteResponse> {
   if (!isValidUlid(runId)) {
     return { status: 400, body: { error: "invalid runId" } };
   }
@@ -270,10 +266,7 @@ function isTerminal(status: string): boolean {
   return status === "completed" || status === "failed" || status === "paused";
 }
 
-function mergePendingDecisions(
-  runId: string,
-  next: z.infer<typeof StepDecisionsSchema>,
-): void {
+function mergePendingDecisions(runId: string, next: z.infer<typeof StepDecisionsSchema>): void {
   const existing = pendingDecisions.get(runId) ?? {};
   pendingDecisions.set(runId, {
     proposals: { ...existing.proposals, ...next.proposals },
