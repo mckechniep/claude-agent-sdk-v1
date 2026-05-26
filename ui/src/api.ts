@@ -1,3 +1,5 @@
+import type { LogEvent, RunConfig, RunManifest } from "./runTypes";
+
 export type AuthMode = "api" | "subscription";
 
 export interface AuthStatus {
@@ -101,6 +103,59 @@ export type PlanEvent =
       durationMs: number;
     }
   | { type: "error"; ok: false; message: string };
+
+// Run lifecycle types -----------------------------------------------------
+
+export type ProposalAction = "accept" | "reject" | "reanalyze";
+export type PlanAction = "accept" | "reject" | "replan";
+
+export interface StepDecisions {
+  proposals?: Record<string, ProposalAction>;
+  plans?: Record<string, PlanAction>;
+  runConfirmed?: boolean;
+}
+
+export interface StartRunBody {
+  config: RunConfig;
+  authMode: AuthMode;
+  selectedRepos: DiscoveredRepo[];
+}
+
+export interface StartRunResponse {
+  runId: string;
+  manifest: RunManifest;
+}
+
+export interface ManifestResponse {
+  manifest: RunManifest;
+  loopActive: boolean;
+}
+
+export interface LogReplayResponse {
+  events: LogEvent[];
+  nextByte: number;
+}
+
+export interface StepRunResponse {
+  manifest: RunManifest;
+}
+
+export interface SubmitDecisionsResponse {
+  ok: true;
+  runId: string;
+  pending: StepDecisions;
+}
+
+export interface ResumeRunResponse {
+  runId: string;
+  manifest: RunManifest;
+}
+
+export interface RunLogStreamHandlers {
+  onTail?: (payload: { events: LogEvent[]; nextByte: number }) => void;
+  onIdle?: (payload: { nextByte: number; fileExists: boolean }) => void;
+  onError?: (message: string) => void;
+}
 
 async function json<T>(res: Response): Promise<T> {
   if (!res.ok) {
@@ -261,6 +316,78 @@ export const api = {
     });
     return { close: () => es.close() };
   },
+  // Run lifecycle -------------------------------------------------------
+
+  startRun: (body: StartRunBody) =>
+    fetch("/api/run/start", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }).then(json<StartRunResponse>),
+
+  stepRun: (runId: string, decisions?: StepDecisions) =>
+    fetch(`/api/run/${encodeURIComponent(runId)}/step`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(decisions ? { decisions } : {}),
+    }).then(json<StepRunResponse>),
+
+  submitDecisions: (runId: string, decisions: StepDecisions) =>
+    fetch(`/api/run/${encodeURIComponent(runId)}/decisions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(decisions),
+    }).then(json<SubmitDecisionsResponse>),
+
+  getManifest: (runId: string) =>
+    fetch(`/api/run/${encodeURIComponent(runId)}/manifest`).then(json<ManifestResponse>),
+
+  resumeRun: (runId: string) =>
+    fetch(`/api/run/${encodeURIComponent(runId)}/resume`, { method: "POST" }).then(
+      json<ResumeRunResponse>,
+    ),
+
+  getRunLog: (runId: string, fromByte = 0) =>
+    fetch(
+      `/api/run/${encodeURIComponent(runId)}/log?fromByte=${encodeURIComponent(String(fromByte))}`,
+    ).then(json<LogReplayResponse>),
+
+  streamRunLog(
+    runId: string,
+    fromByte: number,
+    handlers: RunLogStreamHandlers,
+  ): StreamHandle {
+    const q = new URLSearchParams({ fromByte: String(fromByte) });
+    const es = new EventSource(
+      `/api/run/${encodeURIComponent(runId)}/log/stream?${q.toString()}`,
+    );
+    const safeParse = (msg: MessageEvent<string>): unknown | null => {
+      try {
+        return JSON.parse(msg.data);
+      } catch {
+        return null;
+      }
+    };
+    es.addEventListener("tail", (msg: MessageEvent<string>) => {
+      const data = safeParse(msg) as { events: LogEvent[]; nextByte: number } | null;
+      if (data && handlers.onTail) handlers.onTail(data);
+    });
+    es.addEventListener("idle", (msg: MessageEvent<string>) => {
+      const data = safeParse(msg) as { nextByte: number; fileExists: boolean } | null;
+      if (data && handlers.onIdle) handlers.onIdle(data);
+    });
+    es.addEventListener("error", (msg: Event) => {
+      if (msg instanceof MessageEvent && typeof msg.data === "string") {
+        const data = safeParse(msg) as { message?: string } | null;
+        if (handlers.onError) handlers.onError(String(data?.message ?? "stream error"));
+      } else if (handlers.onError) {
+        handlers.onError("stream disconnected");
+      }
+      es.close();
+    });
+    return { close: () => es.close() };
+  },
+
   streamDiscover(
     args: { path: string; depth?: number; exclude?: string[] },
     onEvent: (event: DiscoverEvent) => void,
