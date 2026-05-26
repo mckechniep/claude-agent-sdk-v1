@@ -15,6 +15,7 @@ import {
   type ServerDeps,
 } from "./routes.js";
 import {
+  handleGetLog,
   handleGetManifest,
   handleResumeRun,
   handleStartRun,
@@ -135,6 +136,9 @@ async function route(req: IncomingMessage, res: ServerResponse, deps: ServerDeps
       }
       if (method === "GET" && action === "manifest") {
         return send(res, await handleGetManifest(runId));
+      }
+      if (method === "GET" && action === "log") {
+        return send(res, await handleGetLog(runId, url.searchParams));
       }
       if (method === "POST" && action === "resume") {
         return send(res, await handleResumeRun(runId, deps));

@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { step } from "../orchestrator/run.js";
 import type { StepParams } from "../orchestrator/run.js";
 import { defaultStateRoot, loadManifest } from "../state/runIndex.js";
+import { readLogTailFromByte, runLogPath } from "../state/runLog.js";
 import { applyAuthMode } from "../auth/mode.js";
 import {
   AUTH_MODES,
@@ -210,6 +211,28 @@ export async function handleGetManifest(runId: string): Promise<RouteResponse> {
   } catch {
     return { status: 404, body: { error: `run ${runId} not found` } };
   }
+}
+
+export async function handleGetLog(
+  runId: string,
+  query: URLSearchParams,
+): Promise<RouteResponse> {
+  if (!isValidUlid(runId)) {
+    return { status: 400, body: { error: "invalid runId" } };
+  }
+  const fromByteRaw = query.get("fromByte");
+  const fromByte = fromByteRaw === null ? 0 : Number(fromByteRaw);
+  if (!Number.isFinite(fromByte) || fromByte < 0 || !Number.isInteger(fromByte)) {
+    return { status: 400, body: { error: "fromByte must be a non-negative integer" } };
+  }
+
+  const stateRoot = defaultStateRoot();
+  const path = runLogPath(stateRoot, runId);
+  const tail = await readLogTailFromByte(path, fromByte);
+  if (!tail.fileExists) {
+    return { status: 404, body: { error: `log not found for run ${runId}` } };
+  }
+  return { status: 200, body: { events: tail.events, nextByte: tail.nextByte } };
 }
 
 export async function handleResumeRun(runId: string, deps: ServerDeps): Promise<RouteResponse> {

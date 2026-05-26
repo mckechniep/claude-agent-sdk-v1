@@ -7,9 +7,11 @@ import {
   handleStepRun,
   handleSubmitDecisions,
   handleGetManifest,
+  handleGetLog,
   handleResumeRun,
   __clearPendingDecisionsForTests,
 } from "../../../src/server/runRoutes.js";
+import { runLogPath } from "../../../src/state/runLog.js";
 import { SCHEMA_VERSION, type RunManifest, type RunStatus } from "../../../src/types.js";
 import { defaultStateRoot } from "../../../src/state/runIndex.js";
 
@@ -180,6 +182,123 @@ describe("runRoutes", () => {
       const body = res.body as { manifest: RunManifest; loopActive: boolean };
       expect(body.manifest.runId).toBe(VALID_RUN_ID);
       expect(body.loopActive).toBe(false);
+    });
+  });
+
+  describe("handleGetLog", () => {
+    it("rejects invalid runId", async () => {
+      const res = await handleGetLog(BAD_RUN_ID, new URLSearchParams());
+      expect(res.status).toBe(400);
+    });
+
+    it("rejects negative fromByte", async () => {
+      const res = await handleGetLog(VALID_RUN_ID, new URLSearchParams({ fromByte: "-1" }));
+      expect(res.status).toBe(400);
+    });
+
+    it("rejects non-numeric fromByte", async () => {
+      const res = await handleGetLog(VALID_RUN_ID, new URLSearchParams({ fromByte: "nope" }));
+      expect(res.status).toBe(400);
+    });
+
+    it("returns 404 when log file does not exist", async () => {
+      const res = await handleGetLog(VALID_RUN_ID, new URLSearchParams());
+      expect(res.status).toBe(404);
+    });
+
+    it("returns events + nextByte when log exists", async () => {
+      const stateRoot = defaultStateRoot();
+      const runDir = join(stateRoot, VALID_RUN_ID);
+      await mkdir(runDir, { recursive: true });
+      const events = [
+        { ts: "2026-05-24T00:00:00.000Z", type: "run_started", runId: VALID_RUN_ID },
+        {
+          ts: "2026-05-24T00:00:01.000Z",
+          type: "phase_started",
+          repoPath: "/x/foo",
+          phase: "discover",
+        },
+      ];
+      const content = events.map((e) => JSON.stringify(e)).join("\n") + "\n";
+      await writeFile(runLogPath(stateRoot, VALID_RUN_ID), content);
+
+      const res = await handleGetLog(VALID_RUN_ID, new URLSearchParams({ fromByte: "0" }));
+      expect(res.status).toBe(200);
+      const body = res.body as { events: unknown[]; nextByte: number };
+      expect(body.events).toHaveLength(2);
+      expect(body.nextByte).toBe(Buffer.byteLength(content));
+    });
+
+    it("replays only events past fromByte cursor", async () => {
+      const stateRoot = defaultStateRoot();
+      const runDir = join(stateRoot, VALID_RUN_ID);
+      await mkdir(runDir, { recursive: true });
+      const event1 = JSON.stringify({
+        ts: "2026-05-24T00:00:00.000Z",
+        type: "run_started",
+        runId: VALID_RUN_ID,
+      });
+      const event2 = JSON.stringify({
+        ts: "2026-05-24T00:00:01.000Z",
+        type: "phase_started",
+        repoPath: "/x/foo",
+        phase: "discover",
+      });
+      const content = event1 + "\n" + event2 + "\n";
+      await writeFile(runLogPath(stateRoot, VALID_RUN_ID), content);
+      const splitByte = Buffer.byteLength(event1 + "\n");
+
+      const res = await handleGetLog(
+        VALID_RUN_ID,
+        new URLSearchParams({ fromByte: String(splitByte) }),
+      );
+      expect(res.status).toBe(200);
+      const body = res.body as { events: { type: string }[]; nextByte: number };
+      expect(body.events).toHaveLength(1);
+      expect(body.events[0]?.type).toBe("phase_started");
+      expect(body.nextByte).toBe(Buffer.byteLength(content));
+    });
+
+    it("returns nextByte === fromByte when fromByte is past EOF", async () => {
+      const stateRoot = defaultStateRoot();
+      const runDir = join(stateRoot, VALID_RUN_ID);
+      await mkdir(runDir, { recursive: true });
+      const content = JSON.stringify({
+        ts: "2026-05-24T00:00:00.000Z",
+        type: "run_started",
+        runId: VALID_RUN_ID,
+      });
+      await writeFile(runLogPath(stateRoot, VALID_RUN_ID), content + "\n");
+
+      const past = Buffer.byteLength(content) + 100;
+      const res = await handleGetLog(
+        VALID_RUN_ID,
+        new URLSearchParams({ fromByte: String(past) }),
+      );
+      expect(res.status).toBe(200);
+      const body = res.body as { events: unknown[]; nextByte: number };
+      expect(body.events).toEqual([]);
+      expect(body.nextByte).toBe(past);
+    });
+
+    it("stops at last complete newline (partial trailing line is unread)", async () => {
+      const stateRoot = defaultStateRoot();
+      const runDir = join(stateRoot, VALID_RUN_ID);
+      await mkdir(runDir, { recursive: true });
+      const complete = JSON.stringify({
+        ts: "2026-05-24T00:00:00.000Z",
+        type: "run_started",
+        runId: VALID_RUN_ID,
+      });
+      // Trailing partial line with no terminating newline — must be excluded.
+      const content = complete + "\n" + '{"ts":"2026-05-24T00:00:01';
+      await writeFile(runLogPath(stateRoot, VALID_RUN_ID), content);
+
+      const res = await handleGetLog(VALID_RUN_ID, new URLSearchParams());
+      expect(res.status).toBe(200);
+      const body = res.body as { events: unknown[]; nextByte: number };
+      expect(body.events).toHaveLength(1);
+      expect(body.nextByte).toBe(Buffer.byteLength(complete) + 1);
     });
   });
 
