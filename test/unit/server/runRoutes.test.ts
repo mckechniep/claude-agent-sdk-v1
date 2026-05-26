@@ -10,6 +10,7 @@ import {
   handleSubmitDecisions,
   handleGetManifest,
   handleGetLog,
+  handleGetRepoArtifacts,
   handleStreamLog,
   handleResumeRun,
   __clearPendingDecisionsForTests,
@@ -302,6 +303,83 @@ describe("runRoutes", () => {
       const body = res.body as { events: unknown[]; nextByte: number };
       expect(body.events).toHaveLength(1);
       expect(body.nextByte).toBe(Buffer.byteLength(complete) + 1);
+    });
+  });
+
+  describe("handleGetRepoArtifacts", () => {
+    function manifestWithRepo(repoPath: string): RunManifest {
+      return {
+        ...makeManifest("running"),
+        repos: [
+          {
+            path: repoPath,
+            name: "foo",
+            stack: "jsts",
+            status: "awaiting-proposal-approval",
+            testGate: false,
+          },
+        ],
+      };
+    }
+
+    it("rejects invalid runId", async () => {
+      const res = await handleGetRepoArtifacts(BAD_RUN_ID, new URLSearchParams());
+      expect(res.status).toBe(400);
+    });
+
+    it("rejects missing repoPath", async () => {
+      const res = await handleGetRepoArtifacts(VALID_RUN_ID, new URLSearchParams());
+      expect(res.status).toBe(400);
+    });
+
+    it("returns 404 when run manifest does not exist", async () => {
+      const res = await handleGetRepoArtifacts(
+        VALID_RUN_ID,
+        new URLSearchParams({ repoPath: "/x/foo" }),
+      );
+      expect(res.status).toBe(404);
+    });
+
+    it("returns 404 when repoPath is not part of the run", async () => {
+      const stateRoot = defaultStateRoot();
+      const runDir = join(stateRoot, VALID_RUN_ID);
+      await mkdir(runDir, { recursive: true });
+      await writeFile(
+        join(runDir, "manifest.json"),
+        JSON.stringify(manifestWithRepo("/x/foo")),
+      );
+
+      const res = await handleGetRepoArtifacts(
+        VALID_RUN_ID,
+        new URLSearchParams({ repoPath: "/etc/passwd" }), // not in manifest
+      );
+      expect(res.status).toBe(404);
+      const body = res.body as { error: string };
+      expect(body.error).toContain("not part of this run");
+    });
+
+    it("returns nulls when repo is in manifest but artifacts don't exist on disk", async () => {
+      const stateRoot = defaultStateRoot();
+      const runDir = join(stateRoot, VALID_RUN_ID);
+      await mkdir(runDir, { recursive: true });
+      const repoDir = join(tmpHome, "fixture-repo");
+      await mkdir(repoDir, { recursive: true });
+      await writeFile(
+        join(runDir, "manifest.json"),
+        JSON.stringify(manifestWithRepo(repoDir)),
+      );
+
+      const res = await handleGetRepoArtifacts(
+        VALID_RUN_ID,
+        new URLSearchParams({ repoPath: repoDir }),
+      );
+      expect(res.status).toBe(200);
+      const body = res.body as {
+        proposalMarkdown: string | null;
+        planMarkdown: string | null;
+      };
+      expect(body.proposalMarkdown).toBeNull();
+      expect(body.planMarkdown).toBeNull();
     });
   });
 
