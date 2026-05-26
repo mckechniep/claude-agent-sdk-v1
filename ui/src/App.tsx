@@ -10,6 +10,7 @@ import {
   type RunsResponse,
   type SmokeEvent,
 } from "./api";
+import { navigate } from "./router";
 
 type LoadState<T> = { phase: "loading" } | { phase: "ok"; data: T } | { phase: "err"; error: string };
 
@@ -382,9 +383,22 @@ export default function App() {
         <section className="card card-runs">
           <div className="card-head">
             <h2>Runs</h2>
-            <button className="btn btn-ghost" onClick={reloadRuns} aria-label="refresh runs">
-              refresh
-            </button>
+            <div className="card-head-actions">
+              <button
+                className="btn btn-primary btn-tight"
+                onClick={() => navigate("/runs/new")}
+                title="open the start-a-run form"
+              >
+                + Start new run
+              </button>
+              <button
+                className="btn btn-ghost"
+                onClick={reloadRuns}
+                aria-label="refresh runs"
+              >
+                refresh
+              </button>
+            </div>
           </div>
           {runsState.phase === "loading" && <p className="muted">loading…</p>}
           {runsState.phase === "err" && <p className="err">failed: {runsState.error}</p>}
@@ -395,14 +409,21 @@ export default function App() {
                 <div className="empty">
                   <p className="empty-title">no runs yet</p>
                   <p className="empty-body">
-                    Once Phase 3+ lands, runs created by <code>agent run</code> will appear here.
+                    Click <strong>Start new run</strong> above to launch an orchestration
+                    run; it'll appear here once it's underway.
                   </p>
                 </div>
               ) : (
                 <ul className="runs">
                   {runsState.data.runs.map((r) => (
                     <li key={r.runId} className="run">
-                      <code className="run-id">{r.runId}</code>
+                      <button
+                        className="run-link"
+                        onClick={() => navigate(`/runs/${r.runId}`)}
+                        title="open run dashboard"
+                      >
+                        <code className="run-id">{r.runId}</code>
+                      </button>
                       <span className={`pill pill-${r.status}`}>{r.status}</span>
                       <span className="run-meta">
                         {r.repoCount} repo{r.repoCount === 1 ? "" : "s"} · {r.tokensUsed.toLocaleString()} tok · {r.authMode}
