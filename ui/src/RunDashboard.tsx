@@ -1,24 +1,63 @@
-import { useEffect, useReducer, useRef, useState } from "react";
+import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { api } from "./api";
+import RepoCard from "./RepoCard";
+import TaskForegroundPanel from "./TaskForegroundPanel";
 import { navigate } from "./router";
 import { initRunViewModel, runReducer } from "./runReducer";
-import type { LogEvent, RunManifest, RunViewModel } from "./runTypes";
+import type {
+  LogEvent,
+  RepoEntry,
+  RunManifest,
+  RunUpdate,
+  RunViewModel,
+  TaskState,
+} from "./runTypes";
 
-// D3 lands the full dashboard with repo grid + foreground panel. This stub
-// fetches the manifest + opens the log stream so the wiring is exercised
-// end-to-end; D3+D4+D5 commits replace the rendered output with the real
-// repo grid and task panels.
+// Event types that signal the manifest may have changed on disk; on these
+// we re-fetch the manifest so the repo grid reflects fresh state.
+const MANIFEST_REFRESH_TYPES: ReadonlySet<LogEvent["type"]> = new Set([
+  "phase_completed",
+  "task_completed",
+  "task_failed",
+  "checkpoint_paused",
+  "run_loop_paused",
+  "run_loop_completed",
+  "run_loop_failed",
+  "run_loop_awaiting_decision",
+  "run_finalized",
+]);
+
+type DashAction =
+  | { type: "init"; vm: RunViewModel }
+  | { type: "update"; update: RunUpdate };
+
+function dashReducer(state: RunViewModel | null, action: DashAction): RunViewModel | null {
+  if (action.type === "init") return action.vm;
+  if (state === null) return null;
+  return runReducer(state, action.update);
+}
+
 export function RunDashboard({ runId }: { runId: string }) {
   const [error, setError] = useState<string | null>(null);
-  const [vm, dispatch] = useReducer(
-    (s: RunViewModel | null, action: { type: "init" | "update"; payload: unknown }) => {
-      if (action.type === "init") return action.payload as RunViewModel;
-      if (s === null) return null;
-      return runReducer(s, action.payload as Parameters<typeof runReducer>[1]);
-    },
-    null,
-  );
+  const [submittingResume, setSubmittingResume] = useState(false);
+  const [submittingDecision, setSubmittingDecision] = useState(false);
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  const [vm, dispatch] = useReducer(dashReducer, null);
   const streamRef = useRef<{ close: () => void } | null>(null);
+
+  const refreshManifest = useCallback(async (): Promise<void> => {
+    try {
+      const { manifest } = await api.getManifest(runId);
+      dispatch({
+        type: "update",
+        update: { kind: "manifest", manifest, fetchedAt: new Date().toISOString() },
+      });
+    } catch (err) {
+      // Don't blow up the whole dashboard on a single manifest refresh failure;
+      // the log stream will keep ticking and the next refresh trigger will retry.
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }, [runId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -28,18 +67,21 @@ export function RunDashboard({ runId }: { runId: string }) {
         if (cancelled) return;
         dispatch({
           type: "init",
-          payload: initRunViewModel({ manifest, fetchedAt: new Date().toISOString() }),
+          vm: initRunViewModel({ manifest, fetchedAt: new Date().toISOString() }),
         });
 
         streamRef.current = api.streamRunLog(runId, 0, {
           onTail: ({ events, nextByte }) => {
             for (const e of events as LogEvent[]) {
-              dispatch({ type: "update", payload: { kind: "event", event: e } });
+              dispatch({ type: "update", update: { kind: "event", event: e } });
+              if (MANIFEST_REFRESH_TYPES.has(e.type)) {
+                void refreshManifest();
+              }
             }
-            dispatch({ type: "update", payload: { kind: "bookmark", byteCursor: nextByte } });
+            dispatch({ type: "update", update: { kind: "bookmark", byteCursor: nextByte } });
           },
           onIdle: ({ nextByte }) => {
-            dispatch({ type: "update", payload: { kind: "bookmark", byteCursor: nextByte } });
+            dispatch({ type: "update", update: { kind: "bookmark", byteCursor: nextByte } });
           },
           onError: (msg) => setError(msg),
         });
@@ -51,9 +93,41 @@ export function RunDashboard({ runId }: { runId: string }) {
       cancelled = true;
       streamRef.current?.close();
     };
-  }, [runId]);
+  }, [runId, refreshManifest]);
 
-  if (error) {
+  const onResume = async (): Promise<void> => {
+    if (submittingResume) return;
+    setSubmittingResume(true);
+    setError(null);
+    try {
+      await api.resumeRun(runId);
+      await refreshManifest();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSubmittingResume(false);
+    }
+  };
+
+  const onApproveDecision = useCallback(
+    async (repoPath: string, kind: "proposal" | "plan"): Promise<void> => {
+      if (submittingDecision) return;
+      setSubmittingDecision(true);
+      try {
+        await api.submitDecisions(runId, {
+          [kind === "proposal" ? "proposals" : "plans"]: { [repoPath]: "accept" },
+        });
+        // The background loop reads this on its next tick; manifest will
+        // refresh on the next state-changing event.
+        await refreshManifest();
+      } finally {
+        setSubmittingDecision(false);
+      }
+    },
+    [runId, refreshManifest, submittingDecision],
+  );
+
+  if (error && !vm) {
     return (
       <PageShell>
         <pre className="scan-err-body">{error}</pre>
@@ -72,31 +146,65 @@ export function RunDashboard({ runId }: { runId: string }) {
     );
   }
 
+  const selected = findSelected(vm, selectedTaskId);
+
   return (
     <PageShell>
-      <DashboardHeader vm={vm} />
+      <DashboardHeader vm={vm} onResume={onResume} submittingResume={submittingResume} />
+      {error && <pre className="scan-err-body card-form">{error}</pre>}
       <section className="card card-form">
         <div className="card-head">
-          <h2>Repos</h2>
-          <span className="card-sub">
-            full repo grid + task foreground arrive in the next commit
-          </span>
+          <h2>Repos ({vm.manifest.repos.length})</h2>
+          {vm.currentRepoPath && (
+            <span className="card-sub">
+              current: <code>{labelOf(vm.manifest.repos, vm.currentRepoPath)}</code>
+            </span>
+          )}
         </div>
-        <ul className="run-repo-stub-list">
-          {vm.manifest.repos.map((r) => (
-            <li key={r.path} className="run-repo-stub">
-              <span className="repo-name">{r.name}</span>
-              <span className={`pill pill-${r.status}`}>{r.status}</span>
-              <span className="repo-path" title={r.path}>
-                {r.path}
-              </span>
-            </li>
+        <div className="repo-grid">
+          {vm.manifest.repos.map((repo) => (
+            <RepoCard
+              key={repo.path}
+              vm={vm}
+              repo={repo}
+              runId={vm.runId}
+              autonomy={vm.manifest.config.autonomy}
+              selectedTaskId={selectedTaskId}
+              onSelectTask={setSelectedTaskId}
+              onDecision={(kind) => onApproveDecision(repo.path, kind)}
+            />
           ))}
-        </ul>
+        </div>
       </section>
+
+      {selected && (
+        <TaskForegroundPanel
+          vm={vm}
+          repo={selected.repo}
+          task={selected.task}
+          onClose={() => setSelectedTaskId(null)}
+        />
+      )}
+
       <LogTail vm={vm} />
     </PageShell>
   );
+}
+
+function findSelected(
+  vm: RunViewModel,
+  selectedTaskId: string | null,
+): { repo: RepoEntry; task: TaskState } | null {
+  if (!selectedTaskId) return null;
+  for (const repo of vm.manifest.repos) {
+    const task = repo.taskState?.find((t) => t.taskId === selectedTaskId);
+    if (task) return { repo, task };
+  }
+  return null;
+}
+
+function labelOf(repos: RepoEntry[], path: string): string {
+  return repos.find((r) => r.path === path)?.name ?? path;
 }
 
 function PageShell({ children }: { children: React.ReactNode }) {
@@ -128,8 +236,17 @@ function PageShell({ children }: { children: React.ReactNode }) {
   );
 }
 
-function DashboardHeader({ vm }: { vm: RunViewModel }) {
+function DashboardHeader({
+  vm,
+  onResume,
+  submittingResume,
+}: {
+  vm: RunViewModel;
+  onResume: () => Promise<void>;
+  submittingResume: boolean;
+}) {
   const m: RunManifest = vm.manifest;
+  const isPaused = m.status === "paused";
   return (
     <section className="card card-run-header">
       <div className="card-head">
@@ -144,6 +261,15 @@ function DashboardHeader({ vm }: { vm: RunViewModel }) {
           </span>
           <span className="run-header-meta-pill">{m.config.autonomy}</span>
           <span className="run-header-meta-pill">{m.config.tier}</span>
+          {isPaused && (
+            <button
+              className="btn btn-primary btn-tight"
+              onClick={() => void onResume()}
+              disabled={submittingResume}
+            >
+              {submittingResume ? "resuming…" : "Resume"}
+            </button>
+          )}
         </div>
       </div>
     </section>

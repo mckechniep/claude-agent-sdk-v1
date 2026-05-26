@@ -17,6 +17,7 @@ import {
 import {
   handleGetLog,
   handleGetManifest,
+  handleGetRepoArtifacts,
   handleResumeRun,
   handleStartRun,
   handleStepRun,
@@ -63,7 +64,7 @@ function send(res: ServerResponse, payload: RouteResponse): void {
 // Matches /api/run/:ulid/:action where ulid is the Crockford-base-32 26-char
 // form. Returns null if the path doesn't match.
 function matchRunAction(path: string): { runId: string; action: string } | null {
-  const m = path.match(/^\/api\/run\/([0-9A-HJKMNP-TV-Z]{26})\/([a-z]+)$/);
+  const m = path.match(/^\/api\/run\/([0-9A-HJKMNP-TV-Z]{26})\/([a-z][a-z-]*)$/);
   if (!m || !m[1] || !m[2]) return null;
   return { runId: m[1], action: m[2] };
 }
@@ -151,6 +152,9 @@ async function route(req: IncomingMessage, res: ServerResponse, deps: ServerDeps
       }
       if (method === "GET" && action === "log") {
         return send(res, await handleGetLog(runId, url.searchParams));
+      }
+      if (method === "GET" && action === "repo-artifacts") {
+        return send(res, await handleGetRepoArtifacts(runId, url.searchParams));
       }
       if (method === "POST" && action === "resume") {
         return send(res, await handleResumeRun(runId, deps));

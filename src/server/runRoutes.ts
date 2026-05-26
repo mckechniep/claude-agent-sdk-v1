@@ -6,6 +6,12 @@ import { step } from "../orchestrator/run.js";
 import type { StepParams } from "../orchestrator/run.js";
 import { defaultStateRoot, loadManifest } from "../state/runIndex.js";
 import { readLogTailFromByte, runLogPath } from "../state/runLog.js";
+import {
+  readPlan,
+  readPlanApproval,
+  readProposal,
+  readProposalApproval,
+} from "../state/repoState.js";
 import { applyAuthMode } from "../auth/mode.js";
 import { openSseStream } from "./sse.js";
 import {
@@ -235,6 +241,49 @@ export async function handleGetLog(
     return { status: 404, body: { error: `log not found for run ${runId}` } };
   }
   return { status: 200, body: { events: tail.events, nextByte: tail.nextByte } };
+}
+
+export async function handleGetRepoArtifacts(
+  runId: string,
+  query: URLSearchParams,
+): Promise<RouteResponse> {
+  if (!isValidUlid(runId)) {
+    return { status: 400, body: { error: "invalid runId" } };
+  }
+  const repoPath = query.get("repoPath");
+  if (!repoPath) {
+    return { status: 400, body: { error: "repoPath is required" } };
+  }
+
+  let manifest: RunManifest;
+  try {
+    manifest = await loadManifest(join(defaultStateRoot(), runId));
+  } catch {
+    return { status: 404, body: { error: `run ${runId} not found` } };
+  }
+  // Confirm the requested repoPath is part of this run before reading disk.
+  // Defense-in-depth against path traversal via the query parameter.
+  const inManifest = manifest.repos.some((r) => r.path === repoPath);
+  if (!inManifest) {
+    return { status: 404, body: { error: "repoPath not part of this run" } };
+  }
+
+  const [proposalMarkdown, planMarkdown, proposalApproval, planApproval] = await Promise.all([
+    readProposal(repoPath),
+    readPlan(repoPath),
+    readProposalApproval(repoPath),
+    readPlanApproval(repoPath),
+  ]);
+
+  return {
+    status: 200,
+    body: {
+      proposalMarkdown,
+      planMarkdown,
+      proposalApproval,
+      planApproval,
+    },
+  };
 }
 
 // Tunables for the log SSE stream. Polling cadence is a soft-realtime

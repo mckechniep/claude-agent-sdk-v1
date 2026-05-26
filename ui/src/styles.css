@@ -1468,3 +1468,352 @@ pre {
   background: var(--accent-soft);
   color: var(--accent);
 }
+
+/* ---------- repo card grid (D4) ---------- */
+
+.repo-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 14px;
+}
+
+.repo-card {
+  background: var(--bg-elev);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  transition: border-color var(--t-fast) var(--ease);
+}
+.repo-card.is-current {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.repo-card-completed {
+  border-color: var(--ok);
+}
+.repo-card-failed {
+  border-color: var(--err);
+}
+
+.repo-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.repo-card-head-name {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.repo-card-name {
+  font-weight: 600;
+  font-size: 14.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.repo-card-path {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--ink-faint);
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.repo-card-gate {
+  margin-top: 4px;
+  padding: 10px 12px;
+  background: oklch(98% 0.04 90);
+  border: 1px solid oklch(88% 0.06 90);
+  border-radius: var(--r-sm);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.repo-card-gate-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.repo-card-gate-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: oklch(40% 0.16 90);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.repo-card-tasks {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.repo-card-task {
+  border-radius: var(--r-sm);
+}
+.repo-card-task.is-selected {
+  background: var(--accent-soft);
+}
+.repo-card-task.is-current .repo-card-task-title {
+  font-weight: 600;
+}
+
+.repo-card-task-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  background: transparent;
+  border: none;
+  padding: 6px 8px;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  border-radius: var(--r-sm);
+  transition: background var(--t-fast) var(--ease);
+}
+.repo-card-task-btn:hover {
+  background: var(--accent-soft);
+}
+
+.repo-card-task-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+.dot-pending {
+  background: var(--ink-faint);
+}
+.dot-in_progress {
+  background: var(--accent);
+  animation: pulseSoft 1.2s var(--ease) infinite;
+}
+.dot-completed {
+  background: var(--ok);
+}
+.dot-failed {
+  background: var(--err);
+}
+.dot-skipped {
+  background: var(--line-strong);
+}
+
+@keyframes pulseSoft {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
+  }
+}
+
+.repo-card-task-title {
+  flex: 1;
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.repo-card-task-meta {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.repo-card-task-meta-chip {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-faint);
+}
+
+.repo-card-task-sha {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ok);
+}
+
+.repo-card-failure {
+  margin-top: 6px;
+  padding: 10px 12px;
+  background: var(--err-soft);
+  border: 1px solid oklch(85% 0.08 25);
+  border-radius: var(--r-sm);
+}
+
+.repo-card-failure-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--err);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  display: block;
+  margin-bottom: 6px;
+}
+
+.repo-card-failure-body {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 12px;
+  color: var(--ink);
+}
+
+.repo-card-completed-summary {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--ok);
+}
+
+/* ---------- task foreground panel (D5) ---------- */
+
+.task-foreground {
+  background: var(--bg-elev);
+  border: 1px solid var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+  border-radius: var(--r-lg);
+  padding: 22px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.task-foreground-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.task-foreground-title {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.task-foreground-eyebrow {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--ink-faint);
+}
+
+.task-foreground-heading {
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.task-foreground-meta {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.task-foreground-meta-chip {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--ink-mute);
+  padding: 3px 9px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+}
+
+.task-foreground-sha {
+  color: var(--ok);
+}
+
+.task-foreground-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.task-foreground-section-head {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ink-mute);
+}
+
+.task-foreground-section-summary {
+  cursor: pointer;
+}
+
+.task-foreground-section-fail {
+  padding: 12px;
+  background: var(--err-soft);
+  border-radius: var(--r-sm);
+}
+
+.task-foreground-criteria {
+  margin: 0;
+  padding-left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+}
+
+.task-foreground-fail,
+.task-foreground-test {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+.task-foreground-events {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.task-foreground-event {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12.5px;
+}
+
+.task-foreground-event-time {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-faint);
+}
+
+.task-foreground-event-body {
+  color: var(--ink-mute);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

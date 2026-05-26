@@ -352,6 +352,18 @@ export const api = {
       `/api/run/${encodeURIComponent(runId)}/log?fromByte=${encodeURIComponent(String(fromByte))}`,
     ).then(json<LogReplayResponse>),
 
+  getRepoArtifacts: (runId: string, repoPath: string) =>
+    fetch(
+      `/api/run/${encodeURIComponent(runId)}/repo-artifacts?repoPath=${encodeURIComponent(repoPath)}`,
+    ).then(
+      json<{
+        proposalMarkdown: string | null;
+        planMarkdown: string | null;
+        proposalApproval: { approvedAt: string; proposalPath: string } | null;
+        planApproval: { approvedAt: string; planPath: string; taskCount: number } | null;
+      }>,
+    ),
+
   streamRunLog(
     runId: string,
     fromByte: number,
