@@ -426,8 +426,7 @@ pre {
 }
 
 .stream-row {
-  display: grid;
-  grid-template-columns: 110px 1fr;
+  display: flex;
   align-items: baseline;
   gap: 10px;
   padding: 4px 14px;
@@ -448,7 +447,7 @@ pre {
 }
 
 .stream-pill {
-  justify-self: start;
+  flex-shrink: 0;
   font-size: 10.5px;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -484,6 +483,8 @@ pre {
 }
 
 .stream-summary {
+  flex: 1;
+  min-width: 0;
   color: var(--ink);
   word-break: break-word;
 }
@@ -975,8 +976,11 @@ pre {
   line-height: 1.55;
   white-space: pre-wrap;
   word-break: break-word;
-  max-height: 540px;
+  min-height: 200px;
+  height: 540px;
+  max-height: 80vh;
   overflow-y: auto;
+  resize: vertical;
   color: var(--ink);
 }
 
