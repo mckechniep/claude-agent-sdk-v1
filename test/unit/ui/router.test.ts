@@ -30,4 +30,20 @@ describe("parseHash", () => {
     expect(parseHash("#/runs/not-a-ulid")).toEqual({ kind: "home" });
     expect(parseHash("#/runs/01HKQR3Z8MAAAAAAAAAAAAA")).toEqual({ kind: "home" }); // too short
   });
+
+  it("extracts refine params on the home route", () => {
+    expect(parseHash("#/?refine=plan&repoPath=/x/foo")).toEqual({
+      kind: "home",
+      refine: { kind: "plan", repoPath: "/x/foo" },
+    });
+    expect(parseHash("#/?refine=analyze&repoPath=/x/bar")).toEqual({
+      kind: "home",
+      refine: { kind: "analyze", repoPath: "/x/bar" },
+    });
+  });
+
+  it("ignores incomplete or invalid refine params", () => {
+    expect(parseHash("#/?refine=plan")).toEqual({ kind: "home" }); // missing path
+    expect(parseHash("#/?refine=bogus&repoPath=/x")).toEqual({ kind: "home" }); // bad kind
+  });
 });

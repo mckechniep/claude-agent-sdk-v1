@@ -7,7 +7,7 @@ export function Root() {
   const route = useHashRoute();
   if (route.kind === "new-run") return <StartRunForm />;
   if (route.kind === "run-dashboard") return <RunDashboard runId={route.runId} />;
-  return <App />;
+  return <App refine={route.refine} />;
 }
 
 export default Root;

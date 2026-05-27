@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { api, type AuthMode, type AuthStatus, type DiscoveredRepo } from "./api";
 import { navigate } from "./router";
+import { Breadcrumbs } from "./Breadcrumbs";
 import type {
   AutonomyMode,
   ModelTier,
@@ -137,13 +138,6 @@ export function StartRunForm() {
     <div className="page">
       <header className="hdr">
         <div className="hdr-mark">
-          <button
-            className="hdr-back"
-            onClick={() => navigate("/")}
-            aria-label="back to home"
-          >
-            ◂
-          </button>
           <span className="hdr-glyph">◆</span>
           <span className="hdr-name">start a new run</span>
         </div>
@@ -153,6 +147,7 @@ export function StartRunForm() {
           <span className="hdr-meta-value">:3737 ⇄ :5173</span>
         </div>
       </header>
+      <Breadcrumbs crumbs={[{ label: "Home", href: "/" }, { label: "New run" }]} />
 
       <main className="form-grid">
         <section className="card card-form">

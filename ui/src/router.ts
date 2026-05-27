@@ -3,8 +3,13 @@ import { useEffect, useState } from "react";
 // Hash-based route descriptor. Lightweight enough to avoid pulling in
 // react-router for v0.1's three routes. If the route surface grows past
 // ~6 routes, swap this out.
+export interface RefineParams {
+  kind: "analyze" | "plan";
+  repoPath: string;
+}
+
 export type Route =
-  | { kind: "home" }
+  | { kind: "home"; refine?: RefineParams }
   | { kind: "new-run" }
   | { kind: "run-dashboard"; runId: string };
 
@@ -12,13 +17,26 @@ const ULID_REGEX = /^[0-9A-HJKMNP-TV-Z]{26}$/;
 
 export function parseHash(hash: string): Route {
   // location.hash includes the leading "#"; strip it before matching.
-  const path = hash.startsWith("#") ? hash.slice(1) : hash;
+  const raw = hash.startsWith("#") ? hash.slice(1) : hash;
+  const qIdx = raw.indexOf("?");
+  const path = qIdx >= 0 ? raw.slice(0, qIdx) : raw;
+  const queryStr = qIdx >= 0 ? raw.slice(qIdx + 1) : "";
+  const params = new URLSearchParams(queryStr);
+
   if (path === "/runs/new") return { kind: "new-run" };
   const runMatch = path.match(/^\/runs\/([^/]+)$/);
   if (runMatch && runMatch[1] && ULID_REGEX.test(runMatch[1])) {
     return { kind: "run-dashboard", runId: runMatch[1] };
   }
-  return { kind: "home" };
+
+  const refineKind = params.get("refine");
+  const refinePath = params.get("repoPath");
+  const refine: RefineParams | undefined =
+    (refineKind === "analyze" || refineKind === "plan") && refinePath
+      ? { kind: refineKind, repoPath: refinePath }
+      : undefined;
+
+  return refine ? { kind: "home", refine } : { kind: "home" };
 }
 
 export function useHashRoute(): Route {

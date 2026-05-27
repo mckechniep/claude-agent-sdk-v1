@@ -11,7 +11,13 @@ import {
   type SmokeEvent,
   type Thoroughness,
 } from "./api";
-import { navigate } from "./router";
+import { navigate, type RefineParams } from "./router";
+import { Breadcrumbs } from "./Breadcrumbs";
+
+function parentDir(p: string): string {
+  const idx = p.lastIndexOf("/");
+  return idx > 0 ? p.slice(0, idx) : p;
+}
 
 // Thoroughness thresholds mirror src/sdk/prompts/iteration.ts. UI copy uses
 // these to show users when narrowing/defaults kick in.
@@ -152,7 +158,7 @@ type PlanState =
       messages: MessageEntry[];
     };
 
-export default function App() {
+export default function App({ refine }: { refine?: RefineParams } = {}) {
   const [authState, reloadAuth] = useAsync<AuthStatus>(() => api.authStatus(), []);
   const [runsState, reloadRuns] = useAsync<RunsResponse>(() => api.listRuns(), []);
   const [chosenMode, setChosenMode] = useState<AuthMode | null>(null);
@@ -185,6 +191,16 @@ export default function App() {
       if (detected) setChosenMode(detected);
     }
   }, [authState, chosenMode]);
+
+  // Cross-link prefill: when the dashboard sends us here with refine params,
+  // pre-fill the scan path so the user just has to click Scan to find the
+  // target repo. Auto-scan is intentionally not done — the user might want
+  // to adjust the depth or path first.
+  useEffect(() => {
+    if (refine?.repoPath) {
+      setScanPath(parentDir(refine.repoPath));
+    }
+  }, [refine]);
 
   useEffect(
     () => () => {
@@ -371,6 +387,18 @@ export default function App() {
           <span className="hdr-meta-value">:3737 ⇄ :5173</span>
         </div>
       </header>
+      <Breadcrumbs crumbs={[{ label: "Home" }]} />
+      {refine && (
+        <div className="refine-banner">
+          <span>
+            <strong>Refine flow:</strong> dashboard sent you here to refine the{" "}
+            <strong>{refine.kind}</strong> for <code>{refine.repoPath}</code>. Scan
+            path is pre-filled to <code>{parentDir(refine.repoPath)}</code> — click
+            Scan to find the repo, then Analyze / Plan to refine. Your edits write
+            to disk and the dashboard will pick them up on next refresh.
+          </span>
+        </div>
+      )}
 
       <main className="grid">
         <section className="card card-auth">

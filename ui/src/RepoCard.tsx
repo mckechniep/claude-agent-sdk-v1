@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "./api";
+import { navigate } from "./router";
 import type {
   AutonomyMode,
   RepoEntry,
@@ -71,6 +72,8 @@ export function RepoCard({
         {repo.path}
       </p>
 
+      <RefineLinks repoPath={repo.path} repoStatus={repo.status} />
+
       {showApprovalGate && (
         <ApprovalGate
           runId={runId}
@@ -117,6 +120,49 @@ export function RepoCard({
         </p>
       )}
     </article>
+  );
+}
+
+// Cross-link from the dashboard back to the home-page Analyze / Plan
+// panels. Useful when the user wants to refine a proposal or plan that
+// the orchestrator generated rather than approve-as-is. The home page
+// reads ?refine=... and pre-fills its scan path.
+function RefineLinks({
+  repoPath,
+  repoStatus,
+}: {
+  repoPath: string;
+  repoStatus: RepoEntry["status"];
+}) {
+  // Only show during phases where refinement makes sense. Completed /
+  // failed / skipped repos have already shipped past the point where
+  // refining the analysis or plan would do anything.
+  const refinable =
+    repoStatus === "pending" ||
+    repoStatus === "analyzing" ||
+    repoStatus === "awaiting-proposal-approval" ||
+    repoStatus === "planning" ||
+    repoStatus === "awaiting-plan-approval";
+  if (!refinable) return null;
+  const enc = encodeURIComponent(repoPath);
+  return (
+    <div className="repo-card-refine">
+      <span className="repo-card-refine-label">Refine on home page:</span>
+      <button
+        className="repo-card-refine-link"
+        onClick={() => navigate(`/?refine=analyze&repoPath=${enc}`)}
+        title="open the Analyze panel for this repo"
+      >
+        analyze →
+      </button>
+      <button
+        className="repo-card-refine-link"
+        onClick={() => navigate(`/?refine=plan&repoPath=${enc}`)}
+        title="open the Plan panel for this repo"
+      >
+        plan →
+      </button>
+    </div>
   );
 }
 

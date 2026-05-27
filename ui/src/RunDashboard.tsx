@@ -3,6 +3,7 @@ import { api } from "./api";
 import RepoCard from "./RepoCard";
 import TaskForegroundPanel from "./TaskForegroundPanel";
 import { navigate } from "./router";
+import { Breadcrumbs } from "./Breadcrumbs";
 import { initRunViewModel, runReducer } from "./runReducer";
 import type {
   LogEvent,
@@ -146,7 +147,7 @@ export function RunDashboard({ runId }: { runId: string }) {
 
   if (error && !vm) {
     return (
-      <PageShell>
+      <PageShell runId={runId}>
         <pre className="scan-err-body">{error}</pre>
         <button className="btn btn-ghost" onClick={() => navigate("/")}>
           Back to home
@@ -157,7 +158,7 @@ export function RunDashboard({ runId }: { runId: string }) {
 
   if (!vm) {
     return (
-      <PageShell>
+      <PageShell runId={runId}>
         <p className="muted">loading run…</p>
       </PageShell>
     );
@@ -166,7 +167,7 @@ export function RunDashboard({ runId }: { runId: string }) {
   const selected = findSelected(vm, selectedTaskId);
 
   return (
-    <PageShell>
+    <PageShell runId={runId}>
       <DashboardHeader vm={vm} onResume={onResume} submittingResume={submittingResume} />
       {vm.manifest.status === "awaiting-run-confirmation" && (
         <RunConfirmationGate
@@ -231,18 +232,24 @@ function labelOf(repos: RepoEntry[], path: string): string {
   return repos.find((r) => r.path === path)?.name ?? path;
 }
 
-function PageShell({ children }: { children: React.ReactNode }) {
+function PageShell({
+  children,
+  runId,
+}: {
+  children: React.ReactNode;
+  runId?: string;
+}) {
+  const crumbs = runId
+    ? [
+        { label: "Home", href: "/" },
+        { label: "Runs", href: "/" },
+        { label: runId.slice(0, 8) + "…", title: runId },
+      ]
+    : [{ label: "Home", href: "/" }, { label: "Run dashboard" }];
   return (
     <div className="page">
       <header className="hdr">
         <div className="hdr-mark">
-          <button
-            className="hdr-back"
-            onClick={() => navigate("/")}
-            aria-label="back to home"
-          >
-            ◂
-          </button>
           <span className="hdr-glyph">◆</span>
           <span className="hdr-name">run dashboard</span>
         </div>
@@ -252,6 +259,7 @@ function PageShell({ children }: { children: React.ReactNode }) {
           <span className="hdr-meta-value">:3737 ⇄ :5173</span>
         </div>
       </header>
+      <Breadcrumbs crumbs={crumbs} />
       <main className="grid">{children}</main>
       <footer className="ftr">
         <span>v0.1 · dashboard</span>
