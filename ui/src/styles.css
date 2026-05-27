@@ -1450,6 +1450,61 @@ pre {
   gap: 12px;
 }
 
+/* run-confirmation gate (manifest-level "Confirm & start execution") */
+.card-run-gate {
+  background:
+    linear-gradient(135deg, oklch(98% 0.05 145) 0%, oklch(96% 0.04 90) 100%);
+  border: 1px solid oklch(78% 0.12 145);
+  border-radius: var(--r-lg);
+  padding: 22px 26px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  box-shadow: 0 1px 0 0 oklch(100% 0 0 / 0.6) inset;
+}
+
+.run-gate-head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.run-gate-eyebrow {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--ok);
+  font-weight: 600;
+}
+
+.run-gate-title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--ink);
+  letter-spacing: -0.01em;
+}
+
+.run-gate-summary {
+  margin: 0;
+  font-size: 14px;
+  color: var(--ink);
+}
+
+.run-gate-detail {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--ink-mute);
+  line-height: 1.55;
+}
+
+.run-gate-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 6px;
+}
+
 .run-repo-stub-list {
   list-style: none;
   margin: 0;

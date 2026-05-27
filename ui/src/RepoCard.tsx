@@ -1,6 +1,31 @@
 import { useEffect, useState } from "react";
 import { api } from "./api";
-import type { AutonomyMode, RepoEntry, RunViewModel, TaskState } from "./runTypes";
+import type {
+  AutonomyMode,
+  RepoEntry,
+  RunStatus,
+  RunViewModel,
+  TaskState,
+} from "./runTypes";
+
+// Once the run is past preflight, per-repo plan-approval gates are stale —
+// the orchestrator advanced manifest.status to awaiting-run-confirmation
+// only after confirming every awaiting-plan-approval repo has a marker on
+// disk, so showing the gate again would be re-asking a question the loop
+// has already accepted an answer for.
+const STATUSES_PAST_PREFLIGHT: ReadonlySet<RunStatus> = new Set([
+  "awaiting-run-confirmation",
+  "running",
+  "paused",
+  "completed",
+  "failed",
+]);
+
+function isPlanGateStale(repo: RepoEntry, runStatus: RunStatus): boolean {
+  return (
+    repo.status === "awaiting-plan-approval" && STATUSES_PAST_PREFLIGHT.has(runStatus)
+  );
+}
 
 interface Props {
   vm: RunViewModel;
@@ -22,6 +47,16 @@ export function RepoCard({
   onDecision,
 }: Props) {
   const isCurrent = vm.currentRepoPath === repo.path;
+  const staleGate = isPlanGateStale(repo, vm.manifest.status);
+  // When the gate is stale we show a softer "plan approved" pill instead of
+  // the misleading awaiting-plan-approval one.
+  const statusLabel = staleGate ? "plan approved" : repo.status.replace(/-/g, " ");
+  const statusClass = staleGate ? "pill-completed" : `pill-${repo.status}`;
+  const showApprovalGate =
+    (repo.status === "awaiting-proposal-approval" ||
+      repo.status === "awaiting-plan-approval") &&
+    !staleGate;
+
   return (
     <article className={`repo-card repo-card-${repo.status} ${isCurrent ? "is-current" : ""}`}>
       <header className="repo-card-head">
@@ -29,15 +64,14 @@ export function RepoCard({
           <span className="repo-card-name">{repo.name}</span>
           <span className={`repo-stack repo-stack-${repo.stack}`}>{repo.stack}</span>
         </div>
-        <span className={`pill pill-${repo.status}`}>{repo.status.replace(/-/g, " ")}</span>
+        <span className={`pill ${statusClass}`}>{statusLabel}</span>
       </header>
 
       <p className="repo-card-path" title={repo.path}>
         {repo.path}
       </p>
 
-      {(repo.status === "awaiting-proposal-approval" ||
-        repo.status === "awaiting-plan-approval") && (
+      {showApprovalGate && (
         <ApprovalGate
           runId={runId}
           repoPath={repo.path}
@@ -169,9 +203,10 @@ function ApprovalGate({
               {submitting ? "submitting…" : `Approve ${kind}`}
             </button>
             <p className="proposal-hint">
-              Reject / refine flow is v0.2; for now pause the run and use the
-              dedicated <strong>Analyze</strong> / <strong>Plan</strong> panel on
-              the home page to refine, then come back here.
+              Approve to confirm this {kind} and continue. To refine first,
+              open the <strong>{kind === "proposal" ? "Analyze" : "Plan"}</strong>{" "}
+              panel on the home page — your edits write back to disk and this
+              gate will pick them up.
             </p>
           </div>
         </>

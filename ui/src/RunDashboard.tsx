@@ -41,6 +41,7 @@ export function RunDashboard({ runId }: { runId: string }) {
   const [error, setError] = useState<string | null>(null);
   const [submittingResume, setSubmittingResume] = useState(false);
   const [submittingDecision, setSubmittingDecision] = useState(false);
+  const [submittingRunConfirm, setSubmittingRunConfirm] = useState(false);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [vm, dispatch] = useReducer(dashReducer, null);
   const streamRef = useRef<{ close: () => void } | null>(null);
@@ -127,6 +128,22 @@ export function RunDashboard({ runId }: { runId: string }) {
     [runId, refreshManifest, submittingDecision],
   );
 
+  const onConfirmRun = async (): Promise<void> => {
+    if (submittingRunConfirm) return;
+    setSubmittingRunConfirm(true);
+    setError(null);
+    try {
+      await api.submitDecisions(runId, { runConfirmed: true });
+      // Manifest will refresh on the next state-changing log event
+      // (the orchestrator emits phase/task events as execution begins).
+      await refreshManifest();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSubmittingRunConfirm(false);
+    }
+  };
+
   if (error && !vm) {
     return (
       <PageShell>
@@ -151,6 +168,13 @@ export function RunDashboard({ runId }: { runId: string }) {
   return (
     <PageShell>
       <DashboardHeader vm={vm} onResume={onResume} submittingResume={submittingResume} />
+      {vm.manifest.status === "awaiting-run-confirmation" && (
+        <RunConfirmationGate
+          vm={vm}
+          onConfirm={onConfirmRun}
+          submitting={submittingRunConfirm}
+        />
+      )}
       {error && <pre className="scan-err-body card-form">{error}</pre>}
       <section className="card card-form">
         <div className="card-head">
@@ -271,6 +295,52 @@ function DashboardHeader({
             </button>
           )}
         </div>
+      </div>
+    </section>
+  );
+}
+
+function RunConfirmationGate({
+  vm,
+  onConfirm,
+  submitting,
+}: {
+  vm: RunViewModel;
+  onConfirm: () => Promise<void>;
+  submitting: boolean;
+}) {
+  const repos = vm.manifest.repos.filter(
+    (r) => r.status !== "skipped" && r.status !== "failed",
+  );
+  const totalTasks = repos.reduce(
+    (n, r) => n + (r.taskState?.length ?? 0),
+    0,
+  );
+  return (
+    <section className="card card-run-gate">
+      <div className="run-gate-head">
+        <span className="run-gate-eyebrow">Run preflight complete</span>
+        <h2 className="run-gate-title">Ready to execute</h2>
+      </div>
+      <p className="run-gate-summary">
+        <strong>{repos.length}</strong> repo{repos.length === 1 ? "" : "s"} have
+        approved plans · <strong>{totalTasks}</strong> task
+        {totalTasks === 1 ? "" : "s"} will be executed
+      </p>
+      <p className="run-gate-detail">
+        Clicking <strong>Confirm &amp; start execution</strong> hands control to the
+        executor. Each task runs against its repo with the configured model tier
+        ({vm.manifest.config.tier}), commits to a per-task branch when tests pass,
+        and reports progress live below.
+      </p>
+      <div className="run-gate-actions">
+        <button
+          className="btn btn-primary"
+          onClick={() => void onConfirm()}
+          disabled={submitting}
+        >
+          {submitting ? "starting…" : "Confirm & start execution"}
+        </button>
       </div>
     </section>
   );
