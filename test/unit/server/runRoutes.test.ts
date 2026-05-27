@@ -131,22 +131,25 @@ describe("runRoutes", () => {
 
   describe("handleSubmitDecisions", () => {
     it("rejects invalid runId", async () => {
-      const res = await handleSubmitDecisions(BAD_RUN_ID, {});
+      const res = await handleSubmitDecisions(BAD_RUN_ID, {}, { originalApiKey: undefined });
       expect(res.status).toBe(400);
     });
 
     it("rejects invalid decision shape", async () => {
-      const res = await handleSubmitDecisions(VALID_RUN_ID, {
-        plans: { "/p": "not-a-valid-action" },
-      });
+      const res = await handleSubmitDecisions(
+        VALID_RUN_ID,
+        { plans: { "/p": "not-a-valid-action" } },
+        { originalApiKey: undefined },
+      );
       expect(res.status).toBe(400);
     });
 
     it("accepts valid decisions and returns 202", async () => {
-      const res = await handleSubmitDecisions(VALID_RUN_ID, {
-        runConfirmed: true,
-        proposals: { "/x/foo": "accept" },
-      });
+      const res = await handleSubmitDecisions(
+        VALID_RUN_ID,
+        { runConfirmed: true, proposals: { "/x/foo": "accept" } },
+        { originalApiKey: undefined },
+      );
       expect(res.status).toBe(202);
       const body = res.body as { ok: boolean; runId: string; pending: unknown };
       expect(body.ok).toBe(true);
@@ -154,8 +157,16 @@ describe("runRoutes", () => {
     });
 
     it("merges subsequent decision submissions", async () => {
-      await handleSubmitDecisions(VALID_RUN_ID, { proposals: { "/x/a": "accept" } });
-      const res = await handleSubmitDecisions(VALID_RUN_ID, { proposals: { "/x/b": "reject" } });
+      await handleSubmitDecisions(
+        VALID_RUN_ID,
+        { proposals: { "/x/a": "accept" } },
+        { originalApiKey: undefined },
+      );
+      const res = await handleSubmitDecisions(
+        VALID_RUN_ID,
+        { proposals: { "/x/b": "reject" } },
+        { originalApiKey: undefined },
+      );
       expect(res.status).toBe(202);
       const body = res.body as {
         pending: { proposals?: Record<string, string> };

@@ -189,6 +189,7 @@ export async function handleStepRun(
 export async function handleSubmitDecisions(
   runId: string,
   payload: unknown,
+  deps: ServerDeps,
 ): Promise<RouteResponse> {
   if (!isValidUlid(runId)) {
     return { status: 400, body: { error: "invalid runId" } };
@@ -198,12 +199,50 @@ export async function handleSubmitDecisions(
     return { status: 400, body: { error: "invalid body", issues: parsed.error.issues } };
   }
   mergePendingDecisions(runId, parsed.data);
+
+  // The background loop exits on awaiting-decision (see runLoop.ts). When a
+  // decision arrives we need to restart it so the new state gets processed.
+  // For manual autonomy there's no background loop at all — the UI is
+  // expected to call /step explicitly.
+  let loopRestarted = false;
+  const stateRoot = defaultStateRoot();
+  try {
+    const manifest = await loadManifest(join(stateRoot, runId));
+    const canRestart =
+      manifest.config.autonomy !== "manual" &&
+      !isTerminal(manifest.status) &&
+      !isLoopActive(runId);
+    if (canRestart) {
+      const apiOk = manifest.authMode !== "api" || Boolean(deps.originalApiKey);
+      if (apiOk) {
+        const stepParams = makeStepFactory({
+          runId,
+          stateRoot,
+          authMode: manifest.authMode,
+          apiKey: deps.originalApiKey,
+        });
+        try {
+          startBackgroundLoop({ runId, stateRoot, stepParams });
+          loopRestarted = true;
+        } catch (err) {
+          if (!(err instanceof LoopAlreadyActiveError)) throw err;
+          // Already active — that's fine, the running loop will see the
+          // freshly-merged decisions on its next iteration.
+        }
+      }
+    }
+  } catch {
+    // Manifest not on disk yet (early submit) — fall through with the
+    // decision stored. step() will pick it up when the manifest exists.
+  }
+
   return {
     status: 202,
     body: {
       ok: true,
       runId,
       pending: pendingDecisions.get(runId) ?? {},
+      loopRestarted,
     },
   };
 }

@@ -145,7 +145,7 @@ async function route(req: IncomingMessage, res: ServerResponse, deps: ServerDeps
       }
       if (method === "POST" && action === "decisions") {
         const body = await readJsonBody(req);
-        return send(res, await handleSubmitDecisions(runId, body));
+        return send(res, await handleSubmitDecisions(runId, body, deps));
       }
       if (method === "GET" && action === "manifest") {
         return send(res, await handleGetManifest(runId));
