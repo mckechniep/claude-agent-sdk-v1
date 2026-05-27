@@ -21,10 +21,7 @@ const THRESHOLDS: Record<Thoroughness, Thresholds> = {
   fast: { narrow: 2, defaults: 3 },
 };
 
-export function computeIterationMode(
-  iteration: number,
-  thoroughness: Thoroughness,
-): IterationMode {
+export function computeIterationMode(iteration: number, thoroughness: Thoroughness): IterationMode {
   const t = THRESHOLDS[thoroughness];
   if (iteration >= t.defaults) return "defaults";
   if (iteration >= t.narrow) return "narrow";
@@ -38,10 +35,7 @@ export function nextModeAt(thoroughness: Thoroughness): Thresholds {
 // Renders the mode-specific instruction block injected into the analyze
 // prompt's body. The analyzer's required output section 5 is "Open
 // questions" — we steer how that section behaves per mode.
-export function renderAnalyzeModeBlock(
-  iteration: number,
-  thoroughness: Thoroughness,
-): string {
+export function renderAnalyzeModeBlock(iteration: number, thoroughness: Thoroughness): string {
   const mode = computeIterationMode(iteration, thoroughness);
   const header = `\n## Iteration ${iteration} guidance (${thoroughness}, mode: ${mode})\n`;
   switch (mode) {
@@ -66,10 +60,7 @@ export function renderAnalyzeModeBlock(
 // Renders the mode-specific instruction block injected into the plan
 // prompt's body. The planner's output is structured (tasks), so the mode
 // affects HOW it refines rather than a specific section.
-export function renderPlanModeBlock(
-  iteration: number,
-  thoroughness: Thoroughness,
-): string {
+export function renderPlanModeBlock(iteration: number, thoroughness: Thoroughness): string {
   const mode = computeIterationMode(iteration, thoroughness);
   const header = `\n## Iteration ${iteration} guidance (${thoroughness}, mode: ${mode})\n`;
   switch (mode) {
