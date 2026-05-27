@@ -1505,6 +1505,92 @@ pre {
   margin-top: 6px;
 }
 
+/* iteration control (analyze + plan panel headers) */
+.analyze-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.iter-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-mute);
+  transition: border-color var(--t-fast) var(--ease);
+}
+.iter-control-normal {
+  border-color: var(--line);
+}
+.iter-control-narrow {
+  border-color: oklch(78% 0.12 90);
+  background: oklch(98% 0.04 90);
+}
+.iter-control-defaults {
+  border-color: oklch(78% 0.12 145);
+  background: oklch(97% 0.04 145);
+}
+
+.iter-control-label strong {
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.iter-control-mode {
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 0 6px;
+  border-radius: 999px;
+}
+.iter-control-mode-normal {
+  color: var(--ink-faint);
+}
+.iter-control-mode-narrow {
+  color: oklch(48% 0.16 90);
+}
+.iter-control-mode-defaults {
+  color: var(--ok);
+}
+
+.iter-control-select {
+  appearance: none;
+  background: transparent;
+  border: none;
+  border-left: 1px solid var(--line);
+  padding-left: 8px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-mute);
+  cursor: pointer;
+}
+.iter-control-select:hover {
+  color: var(--ink);
+}
+
+/* defaults-mode warning inside proposal-feedback */
+.iter-defaults-banner {
+  padding: 10px 12px;
+  border: 1px solid oklch(78% 0.12 145);
+  background: oklch(97% 0.04 145);
+  border-radius: var(--r-sm);
+  font-size: 12.5px;
+  color: oklch(35% 0.14 145);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.iter-defaults-banner strong {
+  color: oklch(28% 0.14 145);
+}
+
 .run-repo-stub-list {
   list-style: none;
   margin: 0;

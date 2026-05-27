@@ -30,10 +30,14 @@ const DiscoverQuery = z.object({
   exclude: z.array(z.string()).optional(),
 });
 
+const ThoroughnessSchema = z.enum(["thorough", "balanced", "fast"]);
+
 const AnalyzeQuery = z.object({
   repoPath: z.string().min(1),
   mode: z.enum(AUTH_MODES),
   userNotes: z.string().max(20_000).optional(),
+  iteration: z.number().int().min(1).max(100).optional(),
+  thoroughness: ThoroughnessSchema.optional(),
 });
 
 const ApproveBody = z.object({
@@ -45,6 +49,8 @@ const PlanQuery = z.object({
   repoPath: z.string().min(1),
   mode: z.enum(AUTH_MODES),
   userNotes: z.string().max(20_000).optional(),
+  iteration: z.number().int().min(1).max(100).optional(),
+  thoroughness: ThoroughnessSchema.optional(),
 });
 
 const ApprovePlanBody = z.object({
@@ -308,10 +314,13 @@ export async function handleAnalyzeStream(
     : resolvePath(rawPath);
 
   const notesRaw = query.get("userNotes");
+  const iterRaw = query.get("iteration");
   const parsed = AnalyzeQuery.safeParse({
     repoPath: expandedPath,
     mode: query.get("mode"),
     userNotes: notesRaw && notesRaw.length > 0 ? notesRaw : undefined,
+    iteration: iterRaw ? Number(iterRaw) : undefined,
+    thoroughness: query.get("thoroughness") ?? undefined,
   });
 
   if (!parsed.success) {
@@ -384,6 +393,8 @@ export async function handleAnalyzeStream(
       lastCommitDate: repo.lastCommitDate,
       tracker,
       ...(parsed.data.userNotes ? { userNotes: parsed.data.userNotes } : {}),
+      ...(parsed.data.iteration ? { iteration: parsed.data.iteration } : {}),
+      ...(parsed.data.thoroughness ? { thoroughness: parsed.data.thoroughness } : {}),
     });
 
     let final: {
@@ -463,10 +474,13 @@ export async function handlePlanStream(
     : resolvePath(rawPath);
 
   const notesRaw = query.get("userNotes");
+  const iterRaw = query.get("iteration");
   const parsed = PlanQuery.safeParse({
     repoPath: expandedPath,
     mode: query.get("mode"),
     userNotes: notesRaw && notesRaw.length > 0 ? notesRaw : undefined,
+    iteration: iterRaw ? Number(iterRaw) : undefined,
+    thoroughness: query.get("thoroughness") ?? undefined,
   });
 
   if (!parsed.success) {
@@ -560,6 +574,8 @@ export async function handlePlanStream(
       proposalMarkdown,
       tracker,
       ...(parsed.data.userNotes ? { userNotes: parsed.data.userNotes } : {}),
+      ...(parsed.data.iteration ? { iteration: parsed.data.iteration } : {}),
+      ...(parsed.data.thoroughness ? { thoroughness: parsed.data.thoroughness } : {}),
     });
 
     let final: {

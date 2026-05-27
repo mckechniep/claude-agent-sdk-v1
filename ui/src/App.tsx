@@ -9,8 +9,27 @@ import {
   type PlanEvent,
   type RunsResponse,
   type SmokeEvent,
+  type Thoroughness,
 } from "./api";
 import { navigate } from "./router";
+
+// Thoroughness thresholds mirror src/sdk/prompts/iteration.ts. UI copy uses
+// these to show users when narrowing/defaults kick in.
+const THOROUGHNESS_BOUNDS: Record<Thoroughness, { narrow: number; defaults: number }> = {
+  thorough: { narrow: 4, defaults: 6 },
+  balanced: { narrow: 3, defaults: 5 },
+  fast: { narrow: 2, defaults: 3 },
+};
+
+function modeForIteration(
+  iteration: number,
+  thoroughness: Thoroughness,
+): "normal" | "narrow" | "defaults" {
+  const t = THOROUGHNESS_BOUNDS[thoroughness];
+  if (iteration >= t.defaults) return "defaults";
+  if (iteration >= t.narrow) return "narrow";
+  return "normal";
+}
 
 type LoadState<T> = { phase: "loading" } | { phase: "ok"; data: T } | { phase: "err"; error: string };
 
@@ -143,6 +162,9 @@ export default function App() {
   const [scanDepth, setScanDepth] = useState<number>(2);
   const [analyzeState, setAnalyzeState] = useState<AnalyzeState>({ phase: "idle" });
   const [planState, setPlanState] = useState<PlanState>({ phase: "idle" });
+  const [thoroughness, setThoroughness] = useState<Thoroughness>("balanced");
+  const [analyzeIteration, setAnalyzeIteration] = useState(1);
+  const [planIteration, setPlanIteration] = useState(1);
   const streamRef = useRef<{ close: () => void } | null>(null);
   const discoverStreamRef = useRef<{ close: () => void } | null>(null);
   const analyzeStreamRef = useRef<{ close: () => void } | null>(null);
@@ -211,6 +233,11 @@ export default function App() {
     analyzeStreamRef.current?.close();
     planStreamRef.current?.close();
     analyzeMessageIdRef.current = 0;
+    // Refinements (userNotes present) increment the iteration counter; a
+    // first-time analyze on a repo resets to 1.
+    const iter = userNotes ? analyzeIteration + 1 : 1;
+    setAnalyzeIteration(iter);
+    setPlanIteration(1); // plan starts fresh once analyze re-runs
     setAnalyzeState({
       phase: "running",
       repoPath: repo.path,
@@ -222,7 +249,13 @@ export default function App() {
     // Re-analyzing invalidates any in-memory plan for this repo.
     setPlanState({ phase: "idle" });
     analyzeStreamRef.current = api.streamAnalyze(
-      { repoPath: repo.path, mode: chosenMode, userNotes },
+      {
+        repoPath: repo.path,
+        mode: chosenMode,
+        userNotes,
+        iteration: iter,
+        thoroughness,
+      },
       (event: AnalyzeEvent) => {
         setAnalyzeState((prev) =>
           reduceAnalyze(prev, event, repo.name, () => ++analyzeMessageIdRef.current),
@@ -263,6 +296,8 @@ export default function App() {
     planStreamRef.current?.close();
     setAnalyzeState({ phase: "idle" });
     setPlanState({ phase: "idle" });
+    setAnalyzeIteration(1);
+    setPlanIteration(1);
   };
 
   const onPlan = (repo: DiscoveredRepo, userNotes?: string) => {
@@ -270,6 +305,8 @@ export default function App() {
     if (planState.phase === "running") return;
     planStreamRef.current?.close();
     planMessageIdRef.current = 0;
+    const iter = userNotes ? planIteration + 1 : 1;
+    setPlanIteration(iter);
     setPlanState({
       phase: "running",
       repoPath: repo.path,
@@ -279,7 +316,13 @@ export default function App() {
       ...(userNotes ? { previousNotes: userNotes } : {}),
     });
     planStreamRef.current = api.streamPlan(
-      { repoPath: repo.path, mode: chosenMode, userNotes },
+      {
+        repoPath: repo.path,
+        mode: chosenMode,
+        userNotes,
+        iteration: iter,
+        thoroughness,
+      },
       (event: PlanEvent) => {
         setPlanState((prev) =>
           reducePlan(prev, event, repo.name, () => ++planMessageIdRef.current),
@@ -490,6 +533,10 @@ export default function App() {
             onCloseAnalyze={onCloseAnalyze}
             onPlan={onPlan}
             onApprovePlan={onApprovePlan}
+            thoroughness={thoroughness}
+            onThoroughnessChange={setThoroughness}
+            analyzeIteration={analyzeIteration}
+            planIteration={planIteration}
           />
         </section>
       </main>
@@ -641,6 +688,10 @@ interface DiscoverReadoutProps {
   onCloseAnalyze: () => void;
   onPlan: (repo: DiscoveredRepo, userNotes?: string) => void;
   onApprovePlan: () => void;
+  thoroughness: Thoroughness;
+  onThoroughnessChange: (t: Thoroughness) => void;
+  analyzeIteration: number;
+  planIteration: number;
 }
 
 function DiscoverReadout({
@@ -653,6 +704,10 @@ function DiscoverReadout({
   onCloseAnalyze,
   onPlan,
   onApprovePlan,
+  thoroughness,
+  onThoroughnessChange,
+  analyzeIteration,
+  planIteration,
 }: DiscoverReadoutProps) {
   if (discover.phase === "idle") {
     return (
@@ -712,6 +767,10 @@ function DiscoverReadout({
                 onPlan={(notes) => onPlan(repo, notes)}
                 onApprovePlan={onApprovePlan}
                 chosenMode={chosenMode}
+                thoroughness={thoroughness}
+                onThoroughnessChange={onThoroughnessChange}
+                analyzeIteration={analyzeIteration}
+                planIteration={planIteration}
               />
             );
           })}
@@ -739,6 +798,10 @@ interface RepoRowProps {
   analyze: AnalyzeState | null;
   plan: PlanState | null;
   chosenMode: AuthMode | null;
+  thoroughness: Thoroughness;
+  onThoroughnessChange: (t: Thoroughness) => void;
+  analyzeIteration: number;
+  planIteration: number;
 }
 
 function RepoRow({
@@ -753,6 +816,10 @@ function RepoRow({
   analyze,
   plan,
   chosenMode,
+  thoroughness,
+  onThoroughnessChange,
+  analyzeIteration,
+  planIteration,
 }: RepoRowProps) {
   const date = repo.lastCommitDate ? formatRelative(repo.lastCommitDate) : "no commits";
   const buttonLabel = (() => {
@@ -800,6 +867,10 @@ function RepoRow({
           onApprove={onApprove}
           onPlan={(notes) => onPlan(notes)}
           onApprovePlan={onApprovePlan}
+          thoroughness={thoroughness}
+          onThoroughnessChange={onThoroughnessChange}
+          analyzeIteration={analyzeIteration}
+          planIteration={planIteration}
         />
       )}
     </li>
@@ -814,6 +885,10 @@ interface AnalyzePanelProps {
   onApprove: () => void;
   onPlan: (userNotes?: string) => void;
   onApprovePlan: () => void;
+  thoroughness: Thoroughness;
+  onThoroughnessChange: (t: Thoroughness) => void;
+  analyzeIteration: number;
+  planIteration: number;
 }
 
 function AnalyzePanel({
@@ -824,6 +899,10 @@ function AnalyzePanel({
   onApprove,
   onPlan,
   onApprovePlan,
+  thoroughness,
+  onThoroughnessChange,
+  analyzeIteration,
+  planIteration,
 }: AnalyzePanelProps) {
   const [notes, setNotes] = useState<string>("");
   if (analyze.phase === "idle") return null;
@@ -864,9 +943,17 @@ function AnalyzePanel({
     >
       <div className="analyze-head">
         <span className="analyze-label">{headerLabel}</span>
-        <button className="btn btn-ghost btn-tight" onClick={onClose}>
-          close
-        </button>
+        <div className="analyze-head-actions">
+          <IterationControl
+            iteration={analyzeIteration}
+            thoroughness={thoroughness}
+            onThoroughnessChange={onThoroughnessChange}
+            label="analyze"
+          />
+          <button className="btn btn-ghost btn-tight" onClick={onClose}>
+            close
+          </button>
+        </div>
       </div>
 
       {analyze.messages.length > 0 && (
@@ -910,6 +997,11 @@ function AnalyzePanel({
 
           {!isApproved && (
             <div className="proposal-feedback">
+              <IterationBanner
+                iteration={analyzeIteration}
+                thoroughness={thoroughness}
+                kind="analyze"
+              />
               <label className="field">
                 <span className="field-label">your reply to the analyzer</span>
                 <textarea
@@ -965,7 +1057,14 @@ function AnalyzePanel({
       )}
 
       {isApproved && (
-        <PlanPanel plan={plan} onPlan={onPlan} onApprovePlan={onApprovePlan} />
+        <PlanPanel
+          plan={plan}
+          onPlan={onPlan}
+          onApprovePlan={onApprovePlan}
+          thoroughness={thoroughness}
+          onThoroughnessChange={onThoroughnessChange}
+          planIteration={planIteration}
+        />
       )}
 
       {isErr && <pre className="scan-err-body">{analyze.message}</pre>}
@@ -977,9 +1076,19 @@ interface PlanPanelProps {
   plan: PlanState | null;
   onPlan: (userNotes?: string) => void;
   onApprovePlan: () => void;
+  thoroughness: Thoroughness;
+  onThoroughnessChange: (t: Thoroughness) => void;
+  planIteration: number;
 }
 
-function PlanPanel({ plan, onPlan, onApprovePlan }: PlanPanelProps) {
+function PlanPanel({
+  plan,
+  onPlan,
+  onApprovePlan,
+  thoroughness,
+  onThoroughnessChange,
+  planIteration,
+}: PlanPanelProps) {
   const [notes, setNotes] = useState<string>("");
   const isRunning = plan?.phase === "running";
   const isErr = plan?.phase === "error";
@@ -1023,11 +1132,21 @@ function PlanPanel({ plan, onPlan, onApprovePlan }: PlanPanelProps) {
     <div className={panelClass}>
       <div className="plan-head">
         <span className="plan-label">{headerLabel}</span>
-        {isIdle && (
-          <button className="btn btn-primary btn-tight" onClick={() => onPlan()}>
-            Generate plan
-          </button>
-        )}
+        <div className="analyze-head-actions">
+          {!isIdle && (
+            <IterationControl
+              iteration={planIteration}
+              thoroughness={thoroughness}
+              onThoroughnessChange={onThoroughnessChange}
+              label="plan"
+            />
+          )}
+          {isIdle && (
+            <button className="btn btn-primary btn-tight" onClick={() => onPlan()}>
+              Generate plan
+            </button>
+          )}
+        </div>
       </div>
 
       {plan && plan.phase !== "idle" && plan.messages.length > 0 && (
@@ -1071,6 +1190,11 @@ function PlanPanel({ plan, onPlan, onApprovePlan }: PlanPanelProps) {
 
           {!isApproved && (
             <div className="proposal-feedback">
+              <IterationBanner
+                iteration={planIteration}
+                thoroughness={thoroughness}
+                kind="plan"
+              />
               <label className="field">
                 <span className="field-label">your reply to the planner</span>
                 <textarea
@@ -1240,6 +1364,86 @@ function reduceAnalyze(
       return { phase: "error", repoPath, repoName, message: event.message, messages };
     }
   }
+}
+
+function IterationBanner({
+  iteration,
+  thoroughness,
+  kind,
+}: {
+  iteration: number;
+  thoroughness: Thoroughness;
+  kind: "analyze" | "plan";
+}) {
+  const mode = modeForIteration(iteration, thoroughness);
+  if (mode === "normal") return null;
+  const agent = kind === "analyze" ? "analyzer" : "planner";
+  if (mode === "narrow") {
+    return (
+      <div className="iter-defaults-banner">
+        <span>
+          <strong>Narrowing mode active</strong> · iter {iteration} ({thoroughness})
+        </span>
+        <span>
+          The {agent} has been told to stop re-asking questions you've already answered
+          and stop inventing new angles on settled points. Only genuinely unresolved
+          ambiguity should reach you in this round.
+        </span>
+      </div>
+    );
+  }
+  return (
+    <div className="iter-defaults-banner">
+      <span>
+        <strong>Defaults mode active</strong> · iter {iteration} ({thoroughness})
+      </span>
+      <span>
+        The {agent} has been told to commit to <strong>RECOMMENDED defaults</strong>{" "}
+        for any remaining ambiguity rather than keep probing. Read the proposal — if a
+        default is wrong, submit notes to override it; otherwise click <strong>Approve
+        as-is</strong> to accept the {agent}'s judgement and move on.
+      </span>
+    </div>
+  );
+}
+
+function IterationControl({
+  iteration,
+  thoroughness,
+  onThoroughnessChange,
+  label,
+}: {
+  iteration: number;
+  thoroughness: Thoroughness;
+  onThoroughnessChange: (t: Thoroughness) => void;
+  label: string;
+}) {
+  const mode = modeForIteration(iteration, thoroughness);
+  const bounds = THOROUGHNESS_BOUNDS[thoroughness];
+  const nextChange =
+    mode === "normal"
+      ? `narrows at iter ${bounds.narrow}`
+      : mode === "narrow"
+        ? `defaults at iter ${bounds.defaults}`
+        : "converging — no more probing";
+  return (
+    <div className={`iter-control iter-control-${mode}`} title={`${label} loop pace`}>
+      <span className="iter-control-label">
+        iter <strong>{iteration}</strong>
+      </span>
+      <span className={`iter-control-mode iter-control-mode-${mode}`}>{mode}</span>
+      <select
+        className="iter-control-select"
+        value={thoroughness}
+        onChange={(e) => onThoroughnessChange(e.target.value as Thoroughness)}
+        title={`loop pace · ${nextChange}`}
+      >
+        <option value="thorough">thorough</option>
+        <option value="balanced">balanced</option>
+        <option value="fast">fast</option>
+      </select>
+    </div>
+  );
 }
 
 function formatRelative(iso: string): string {

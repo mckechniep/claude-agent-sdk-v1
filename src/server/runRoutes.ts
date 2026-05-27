@@ -221,10 +221,7 @@ export async function handleGetManifest(runId: string): Promise<RouteResponse> {
   }
 }
 
-export async function handleGetLog(
-  runId: string,
-  query: URLSearchParams,
-): Promise<RouteResponse> {
+export async function handleGetLog(runId: string, query: URLSearchParams): Promise<RouteResponse> {
   if (!isValidUlid(runId)) {
     return { status: 400, body: { error: "invalid runId" } };
   }
@@ -317,17 +314,7 @@ export async function handleStreamLog(
   const sse = openSseStream(req, res);
   let cursor = fromByte;
   let lastHeartbeat = Date.now();
-  let poll: NodeJS.Timeout | undefined;
   let stopped = false;
-
-  const stop = (): void => {
-    if (stopped) return;
-    stopped = true;
-    if (poll) clearInterval(poll);
-    sse.close();
-  };
-
-  sse.onClientClose(stop);
 
   const tick = async (): Promise<void> => {
     if (sse.closed() || stopped) return;
@@ -346,16 +333,26 @@ export async function handleStreamLog(
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       if (!sse.closed()) sse.send("error", { message });
-      stop();
+      stopped = true;
+      sse.close();
     }
   };
 
-  // Initial replay before subscribing to deltas.
+  // Initial replay before subscribing to deltas. If the first tick errored
+  // and closed the stream, bail before starting the interval.
   await tick();
   if (stopped) return;
-  poll = setInterval(() => {
+
+  const poll = setInterval(() => {
     void tick();
   }, LOG_STREAM_POLL_MS);
+
+  // sse.close() (called from tick's catch or by the client disconnecting)
+  // fires this handler — both paths converge here to clear the timer.
+  sse.onClientClose(() => {
+    stopped = true;
+    clearInterval(poll);
+  });
 }
 
 export async function handleResumeRun(runId: string, deps: ServerDeps): Promise<RouteResponse> {

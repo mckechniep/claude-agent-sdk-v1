@@ -1,4 +1,5 @@
 import type { StackProfile } from "../../stack/profiles/types.js";
+import { renderPlanModeBlock, type Thoroughness } from "./iteration.js";
 
 export interface PlanPromptInput {
   repoPath: string;
@@ -7,6 +8,8 @@ export interface PlanPromptInput {
   proposalMarkdown: string;
   userNotes?: string;
   previousPlan?: string;
+  iteration?: number;
+  thoroughness?: Thoroughness;
 }
 
 export function renderPlanPrompt(input: PlanPromptInput): string {
@@ -17,6 +20,10 @@ export function renderPlanPrompt(input: PlanPromptInput): string {
   const notesBlock = input.userNotes
     ? `\n## User notes for this iteration\n\n${input.userNotes.trim()}\n`
     : "";
+
+  const iteration = input.iteration ?? 1;
+  const thoroughness: Thoroughness = input.thoroughness ?? "balanced";
+  const modeBlock = renderPlanModeBlock(iteration, thoroughness);
 
   return `# Task: Convert an approved completion proposal into an executable plan
 
@@ -76,7 +83,7 @@ Output a markdown document with the following structure:
 - Generate fresh UUIDv4 strings for each new task — do NOT reuse IDs across unrelated tasks. When refining a previous plan, preserve the UUID of any task whose intent is unchanged.
 - The full plan should have between 3 and 30 tasks. Bias toward fewer, larger tasks over many tiny ones.
 - Tools available to you: \`Read\` only. **You may not edit, create, or commit anything.**
-${iterationBlock}${notesBlock}
+${iterationBlock}${notesBlock}${modeBlock}
 
 ## Output
 

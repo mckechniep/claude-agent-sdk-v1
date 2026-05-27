@@ -1,6 +1,7 @@
 import { runQuery, runQueryStream, type QueryEvent } from "../sdk/query.js";
 import type { BudgetTracker } from "../orchestrator/budget.js";
 import { renderAnalyzePrompt } from "../sdk/prompts/analyze.js";
+import type { Thoroughness } from "../sdk/prompts/iteration.js";
 import { readProposal, writeProposal } from "../state/repoState.js";
 import type { StackProfile } from "../stack/profiles/types.js";
 
@@ -13,6 +14,8 @@ export interface AnalyzeParams {
   lastCommitDate: string | null;
   tracker: BudgetTracker;
   userNotes?: string;
+  iteration?: number;
+  thoroughness?: Thoroughness;
   model?: string;
   queryFn?: Parameters<typeof runQuery>[0]["queryFn"];
 }
@@ -41,6 +44,8 @@ export async function* analyzeStream(
     lastCommitDate: params.lastCommitDate,
     userNotes: params.userNotes,
     previousProposal,
+    iteration: params.iteration,
+    thoroughness: params.thoroughness,
   });
 
   const gen = runQueryStream({

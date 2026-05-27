@@ -1,6 +1,7 @@
 import type { LogEvent, RunConfig, RunManifest } from "./runTypes";
 
 export type AuthMode = "api" | "subscription";
+export type Thoroughness = "thorough" | "balanced" | "fast";
 
 export interface AuthStatus {
   apiKeyDetected: boolean;
@@ -228,13 +229,21 @@ export const api = {
     return { close: () => es.close() };
   },
   streamAnalyze(
-    args: { repoPath: string; mode: AuthMode; userNotes?: string },
+    args: {
+      repoPath: string;
+      mode: AuthMode;
+      userNotes?: string;
+      iteration?: number;
+      thoroughness?: Thoroughness;
+    },
     onEvent: (event: AnalyzeEvent) => void,
   ): StreamHandle {
     const q = new URLSearchParams({ repoPath: args.repoPath, mode: args.mode });
     if (args.userNotes && args.userNotes.trim().length > 0) {
       q.set("userNotes", args.userNotes);
     }
+    if (args.iteration && args.iteration > 1) q.set("iteration", String(args.iteration));
+    if (args.thoroughness) q.set("thoroughness", args.thoroughness);
     const es = new EventSource(`/api/analyze/stream?${q.toString()}`);
     const safeParse = (msg: MessageEvent<string>): Record<string, unknown> | null => {
       try {
@@ -272,13 +281,21 @@ export const api = {
     return { close: () => es.close() };
   },
   streamPlan(
-    args: { repoPath: string; mode: AuthMode; userNotes?: string },
+    args: {
+      repoPath: string;
+      mode: AuthMode;
+      userNotes?: string;
+      iteration?: number;
+      thoroughness?: Thoroughness;
+    },
     onEvent: (event: PlanEvent) => void,
   ): StreamHandle {
     const q = new URLSearchParams({ repoPath: args.repoPath, mode: args.mode });
     if (args.userNotes && args.userNotes.trim().length > 0) {
       q.set("userNotes", args.userNotes);
     }
+    if (args.iteration && args.iteration > 1) q.set("iteration", String(args.iteration));
+    if (args.thoroughness) q.set("thoroughness", args.thoroughness);
     const es = new EventSource(`/api/plan/stream?${q.toString()}`);
     const safeParse = (msg: MessageEvent<string>): Record<string, unknown> | null => {
       try {

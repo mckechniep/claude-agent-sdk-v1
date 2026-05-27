@@ -50,6 +50,10 @@ describe("renderAnalyzePrompt", () => {
 
       When in doubt about scope, prefer narrower completion criteria. The user will correct you. Don't pad with speculative features.
 
+      ## Iteration 1 guidance (balanced, mode: normal)
+
+      This is an early iteration. Produce the full proposal as usual; in section 5 list any genuine ambiguities you would want the user to clarify. If you have no remaining questions, write "None." — do not invent questions to fill the section.
+
 
       ## Output format
 

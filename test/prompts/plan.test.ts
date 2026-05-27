@@ -72,6 +72,10 @@ describe("renderPlanPrompt", () => {
       - The full plan should have between 3 and 30 tasks. Bias toward fewer, larger tasks over many tiny ones.
       - Tools available to you: \`Read\` only. **You may not edit, create, or commit anything.**
 
+      ## Iteration 1 guidance (balanced, mode: normal)
+
+      This is an early iteration. Produce the plan; if the user's notes ask for changes, apply them. If the proposal has genuine ambiguity about HOW to slice tasks, you may include a brief "## Open questions" section at the end of the plan to surface them.
+
 
       ## Output
 

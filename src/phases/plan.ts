@@ -1,6 +1,7 @@
 import { runQuery, runQueryStream, type QueryEvent } from "../sdk/query.js";
 import type { BudgetTracker } from "../orchestrator/budget.js";
 import { renderPlanPrompt } from "../sdk/prompts/plan.js";
+import type { Thoroughness } from "../sdk/prompts/iteration.js";
 import { readPlan, writePlan } from "../state/repoState.js";
 import { parsePlan } from "../lib/planParser.js";
 import type { StackProfile } from "../stack/profiles/types.js";
@@ -16,6 +17,8 @@ export interface PlanParams {
   proposalMarkdown: string;
   tracker: BudgetTracker;
   userNotes?: string;
+  iteration?: number;
+  thoroughness?: Thoroughness;
   model?: string;
   queryFn?: Parameters<typeof runQuery>[0]["queryFn"];
 }
@@ -44,6 +47,8 @@ export async function* planStream(params: PlanParams): AsyncGenerator<QueryEvent
     proposalMarkdown: params.proposalMarkdown,
     userNotes: params.userNotes,
     previousPlan,
+    iteration: params.iteration,
+    thoroughness: params.thoroughness,
   });
 
   const gen = runQueryStream({

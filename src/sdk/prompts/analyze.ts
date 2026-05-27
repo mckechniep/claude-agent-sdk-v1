@@ -1,4 +1,5 @@
 import type { StackProfile } from "../../stack/profiles/types.js";
+import { renderAnalyzeModeBlock, type Thoroughness } from "./iteration.js";
 
 export interface AnalyzePromptInput {
   repoPath: string;
@@ -9,6 +10,8 @@ export interface AnalyzePromptInput {
   lastCommitDate: string | null;
   userNotes?: string;
   previousProposal?: string;
+  iteration?: number;
+  thoroughness?: Thoroughness;
 }
 
 export function renderAnalyzePrompt(input: AnalyzePromptInput): string {
@@ -23,6 +26,10 @@ export function renderAnalyzePrompt(input: AnalyzePromptInput): string {
   const notesBlock = input.userNotes
     ? `\n## User notes for this iteration\n\n${input.userNotes.trim()}\n`
     : "";
+
+  const iteration = input.iteration ?? 1;
+  const thoroughness: Thoroughness = input.thoroughness ?? "balanced";
+  const modeBlock = renderAnalyzeModeBlock(iteration, thoroughness);
 
   return `# Task: Analyze a code repository and propose what "completion" means
 
@@ -56,7 +63,7 @@ You have read-only tools available: \`Read\` for files, \`Bash\` for read-only c
 **Do not edit any files in the source tree.** Do not write the proposal to disk yourself — return it as your final response and the orchestrator will persist it to \`.agent/completion-proposal.md\`, overwriting any prior version. If a \`completion-proposal.md\` is already present there, that's expected: it's your previous output, and you should produce a fresh version (informed by the previous proposal and user notes below if provided).
 
 When in doubt about scope, prefer narrower completion criteria. The user will correct you. Don't pad with speculative features.
-${iterationBlock}${notesBlock}
+${iterationBlock}${notesBlock}${modeBlock}
 
 ## Output format
 

@@ -275,10 +275,7 @@ describe("runRoutes", () => {
       await writeFile(runLogPath(stateRoot, VALID_RUN_ID), content + "\n");
 
       const past = Buffer.byteLength(content) + 100;
-      const res = await handleGetLog(
-        VALID_RUN_ID,
-        new URLSearchParams({ fromByte: String(past) }),
-      );
+      const res = await handleGetLog(VALID_RUN_ID, new URLSearchParams({ fromByte: String(past) }));
       expect(res.status).toBe(200);
       const body = res.body as { events: unknown[]; nextByte: number };
       expect(body.events).toEqual([]);
@@ -344,10 +341,7 @@ describe("runRoutes", () => {
       const stateRoot = defaultStateRoot();
       const runDir = join(stateRoot, VALID_RUN_ID);
       await mkdir(runDir, { recursive: true });
-      await writeFile(
-        join(runDir, "manifest.json"),
-        JSON.stringify(manifestWithRepo("/x/foo")),
-      );
+      await writeFile(join(runDir, "manifest.json"), JSON.stringify(manifestWithRepo("/x/foo")));
 
       const res = await handleGetRepoArtifacts(
         VALID_RUN_ID,
@@ -364,10 +358,7 @@ describe("runRoutes", () => {
       await mkdir(runDir, { recursive: true });
       const repoDir = join(tmpHome, "fixture-repo");
       await mkdir(repoDir, { recursive: true });
-      await writeFile(
-        join(runDir, "manifest.json"),
-        JSON.stringify(manifestWithRepo(repoDir)),
-      );
+      await writeFile(join(runDir, "manifest.json"), JSON.stringify(manifestWithRepo(repoDir)));
 
       const res = await handleGetRepoArtifacts(
         VALID_RUN_ID,
