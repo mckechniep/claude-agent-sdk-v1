@@ -18,6 +18,7 @@ export interface AnalyzeParams {
   thoroughness?: Thoroughness;
   model?: string;
   queryFn?: Parameters<typeof runQuery>[0]["queryFn"];
+  abortSignal?: AbortSignal;
 }
 
 export interface AnalyzeResult {
@@ -55,6 +56,7 @@ export async function* analyzeStream(
     tracker: params.tracker,
     model: params.model,
     queryFn: params.queryFn,
+    abortSignal: params.abortSignal,
   });
 
   let finalText = "";

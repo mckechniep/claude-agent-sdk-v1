@@ -51,6 +51,10 @@ export interface StepParams {
   analyzeFn?: typeof analyze;
   planFn?: typeof plan;
   executeFn?: typeof execute;
+  // Optional force-stop signal: passed to phase functions so an in-flight
+  // SDK query can be cancelled mid-stream. The background loop wires this
+  // up; CLI callers can leave it undefined.
+  abortSignal?: AbortSignal;
 }
 
 async function tryLoadManifest(runDir: string): Promise<RunManifest | null> {
@@ -158,7 +162,7 @@ async function advancePreflightOnce(
 
   const autonomy = manifest.config.autonomy;
   const isYolo = autonomy === "yolo";
-  const allowParallel = isYolo || autonomy === "batched";
+  const allowParallel = isYolo || autonomy === "supervised";
 
   // Advance any approved proposals into planning
   for (const repo of manifest.repos.filter((r) => r.status === "awaiting-proposal-approval")) {
@@ -176,6 +180,7 @@ async function advancePreflightOnce(
       proposalMarkdown: proposalMd,
       tracker,
       model: manifest.config.model.plan ?? manifest.config.model.default,
+      abortSignal: p.abortSignal,
     });
     repo.planPath = planResult.planPath;
     repo.taskState = planResult.tasks;
@@ -215,6 +220,7 @@ async function advancePreflightOnce(
           lastCommitDate: repo.lastCommitDate ?? null,
           tracker,
           model: manifest.config.model.analyze ?? manifest.config.model.default,
+          abortSignal: p.abortSignal,
         });
         repo.proposalPath = result.proposalPath;
         repo.status = "awaiting-proposal-approval";
@@ -294,6 +300,7 @@ async function advanceRunning(
         testCommand: profile.defaultTestCommand,
         testTimeoutMs: manifest.config.testTimeoutMs,
         model: manifest.config.model.execute ?? manifest.config.model.default,
+        abortSignal: p.abortSignal,
       });
       Object.assign(task, outcome);
       await saveRepoState(repo.path, repo);

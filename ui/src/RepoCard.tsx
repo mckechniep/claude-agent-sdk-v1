@@ -1,12 +1,16 @@
 import { useEffect, useState } from "react";
 import { api } from "./api";
 import { navigate } from "./router";
+import { InfoBadge } from "./InfoBadge";
 import type {
   AutonomyMode,
   RepoEntry,
+  RepoStatus,
   RunStatus,
   RunViewModel,
+  StackId,
   TaskState,
+  TaskStatus,
 } from "./runTypes";
 
 // Once the run is past preflight, per-repo plan-approval gates are stale —
@@ -59,13 +63,39 @@ export function RepoCard({
     !staleGate;
 
   return (
-    <article className={`repo-card repo-card-${repo.status} ${isCurrent ? "is-current" : ""}`}>
+    <article
+      className={`repo-card repo-card-${repo.status} ${isCurrent ? "is-current" : ""}`}
+      title={isCurrent ? "This is the repo the orchestrator is currently working on." : undefined}
+    >
       <header className="repo-card-head">
         <div className="repo-card-head-name">
           <span className="repo-card-name">{repo.name}</span>
-          <span className={`repo-stack repo-stack-${repo.stack}`}>{repo.stack}</span>
+          <span
+            className={`repo-stack repo-stack-${repo.stack}`}
+            title={describeStack(repo.stack)}
+          >
+            {repo.stack}
+          </span>
         </div>
-        <span className={`pill ${statusClass}`}>{statusLabel}</span>
+        <span
+          className={`pill ${statusClass}`}
+          title={staleGate ? "This repo's plan was approved during preflight." : describeRepoStatus(repo.status)}
+        >
+          {statusLabel}
+        </span>
+        <InfoBadge label="Repo status legend" placement="bottom">
+          <strong>Repo status</strong> tracks each repo&apos;s individual progress:
+          <ul>
+            <li><code>pending</code> — discovered but not yet analyzed</li>
+            <li><code>analyzing</code> — analyzer is producing a proposal</li>
+            <li><code>awaiting-proposal-approval</code> — proposal ready; needs your OK (unless yolo)</li>
+            <li><code>planning</code> — planner is turning the proposal into tasks</li>
+            <li><code>awaiting-plan-approval</code> — plan ready; needs your OK (unless yolo)</li>
+            <li><code>executing</code> — executor is running tasks against this repo</li>
+            <li><code>completed</code> / <code>failed</code> / <code>skipped</code> — terminal</li>
+          </ul>
+          The <strong>stack</strong> chip (<code>jsts</code>, <code>python</code>, <code>generic</code>) is detected from the repo&apos;s files and determines the default test command + tool allowlist.
+        </InfoBadge>
       </header>
 
       <p className="repo-card-path" title={repo.path}>
@@ -289,17 +319,30 @@ function TaskList({
               onClick={() =>
                 onSelectTask(selectedTaskId === t.taskId ? null : t.taskId)
               }
+              title={`${describeTaskStatus(t.status)} Click to ${isSelected ? "collapse" : "expand"} task details.`}
             >
-              <span className={`repo-card-task-dot dot-${t.status}`} aria-hidden />
+              <span
+                className={`repo-card-task-dot dot-${t.status}`}
+                aria-hidden
+                title={describeTaskStatus(t.status)}
+              />
               <span className="repo-card-task-title">{t.title}</span>
               <span className="repo-card-task-meta">
                 {t.tokensUsed > 0 && (
-                  <span className="repo-card-task-meta-chip">
+                  <span
+                    className="repo-card-task-meta-chip"
+                    title="Anthropic tokens consumed by the executor's SDK queries on this task (input + output, summed across retries)."
+                  >
                     {t.tokensUsed.toLocaleString()}t
                   </span>
                 )}
                 {t.commitSha && (
-                  <code className="repo-card-task-sha">{t.commitSha.slice(0, 7)}</code>
+                  <code
+                    className="repo-card-task-sha"
+                    title={`Short SHA of the commit the executor produced on branch agent/${t.taskId.slice(0, 8)}. Click the task to see the full commit info.`}
+                  >
+                    {t.commitSha.slice(0, 7)}
+                  </code>
                 )}
               </span>
             </button>
@@ -308,6 +351,59 @@ function TaskList({
       })}
     </ul>
   );
+}
+
+// Plain-language descriptions for repo/task statuses and stacks. Mirrors
+// the dashboard's describeStatus pattern — single source of truth so any
+// component that needs an explanation reads from here, and TypeScript's
+// exhaustive-switch check forces an update when the union grows.
+function describeRepoStatus(status: RepoStatus): string {
+  switch (status) {
+    case "pending":
+      return "Discovered but not yet analyzed.";
+    case "analyzing":
+      return "The analyzer agent is reading the repo and producing a proposal.";
+    case "awaiting-proposal-approval":
+      return "Proposal is written and waiting for your approval (or auto-approval in yolo mode).";
+    case "planning":
+      return "The planner agent is turning the approved proposal into concrete tasks.";
+    case "awaiting-plan-approval":
+      return "Plan is written and waiting for your approval (or auto-approval in yolo mode).";
+    case "executing":
+      return "The executor agent is running tasks against this repo's files.";
+    case "completed":
+      return "All tasks in this repo finished successfully.";
+    case "failed":
+      return "A task failed and the on-failure policy stopped further work on this repo.";
+    case "skipped":
+      return "This repo was skipped — either by your decision or by the on-failure policy from another repo.";
+  }
+}
+
+function describeTaskStatus(status: TaskStatus): string {
+  switch (status) {
+    case "pending":
+      return "Not yet attempted — waiting in the queue.";
+    case "in_progress":
+      return "The executor agent is actively working on this task.";
+    case "completed":
+      return "Edits made, tests passed (if enabled), and a commit was produced on the task's branch.";
+    case "failed":
+      return "The executor exhausted its retries without producing a passing commit.";
+    case "skipped":
+      return "Skipped — either by user decision or because the repo was abandoned mid-run.";
+  }
+}
+
+function describeStack(stack: StackId): string {
+  switch (stack) {
+    case "jsts":
+      return "JavaScript/TypeScript repo. Default test command: pnpm test. Stack-aware prompts know about package.json, tsconfig, etc.";
+    case "python":
+      return "Python repo. Default test command: pytest. Stack-aware prompts know about pyproject.toml, requirements.txt, etc.";
+    case "generic":
+      return "No specific stack detected — generic prompts and no default test command.";
+  }
 }
 
 export default RepoCard;

@@ -1,6 +1,8 @@
 import { z } from "zod";
 
-export const SCHEMA_VERSION = 1;
+// v2 (2026-05-28): renamed autonomy "batched" → "supervised".
+// Migration: src/state/migrations/index.ts.
+export const SCHEMA_VERSION = 2;
 
 export const AUTH_MODES = ["api", "subscription"] as const;
 export const PHASE_NAMES = ["discover", "analyze", "plan", "execute"] as const;
@@ -10,6 +12,7 @@ export const RUN_STATUSES = [
   "preflight",
   "awaiting-run-confirmation",
   "running",
+  "stopping",
   "paused",
   "completed",
   "failed",
@@ -29,7 +32,7 @@ export const TASK_STATUSES = ["pending", "in_progress", "completed", "failed", "
 export const STACK_IDS = ["jsts", "python", "generic"] as const;
 export const ON_FAILURE_VALUES = ["stop", "skip-task", "skip-repo", "retry"] as const;
 export const TEST_GATE_VALUES = ["required", "skip", "per-repo"] as const;
-export const AUTONOMY_MODES = ["manual", "batched", "yolo"] as const;
+export const AUTONOMY_MODES = ["manual", "supervised", "yolo"] as const;
 export const MODEL_TIERS = ["thorough", "balanced", "fast", "custom"] as const;
 export const MODEL_IDS = [
   "claude-sonnet-4-6",
@@ -63,7 +66,7 @@ export const ModelIdSchema = z.enum(MODEL_IDS);
 
 export const RunConfigSchema = z.object({
   targetDir: z.string(),
-  autonomy: z.enum(AUTONOMY_MODES).default("batched"),
+  autonomy: z.enum(AUTONOMY_MODES).default("supervised"),
   tier: z.enum(MODEL_TIERS).default("balanced"),
   concurrency: z.number().int().positive(),
   checkpointEvery: z.number(),
@@ -226,6 +229,37 @@ export const LogEventSchema = z.discriminatedUnion("type", [
     ts: z.string().datetime(),
     type: z.literal("run_loop_aborted"),
     runId: UlidString,
+  }),
+  z.object({
+    ts: z.string().datetime(),
+    type: z.literal("run_loop_stop_requested"),
+    runId: UlidString,
+    mode: z.enum(["soft", "force"]),
+  }),
+  z.object({
+    ts: z.string().datetime(),
+    type: z.literal("run_loop_force_aborted"),
+    runId: UlidString,
+    duringStep: z.boolean(),
+  }),
+  z.object({
+    ts: z.string().datetime(),
+    type: z.literal("run_recovered_from_crash"),
+    runId: UlidString,
+    // Status the run was stuck in when the sweep found it — useful when
+    // debugging which manifest states tend to leak across crashes.
+    previousStatus: z.enum(RUN_STATUSES),
+    // ISO timestamp of the last heartbeat we saw, or null if the run never
+    // had one (e.g. crashed before the first beat fired).
+    lastHeartbeatAt: z.string().datetime().nullable(),
+  }),
+  z.object({
+    ts: z.string().datetime(),
+    type: z.literal("run_retried_from_failure"),
+    runId: UlidString,
+    // How many repos and tasks were reset back to a retryable state.
+    repoCount: z.number().int().nonnegative(),
+    taskCount: z.number().int().nonnegative(),
   }),
   z.object({
     ts: z.string().datetime(),

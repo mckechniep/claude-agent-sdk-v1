@@ -12,9 +12,13 @@ import {
   handleGetLog,
   handleGetRepoArtifacts,
   handleStreamLog,
+  handleRecoverRun,
   handleResumeRun,
+  handleRetryFromFailure,
+  handleStopRun,
   __clearPendingDecisionsForTests,
 } from "../../../src/server/runRoutes.js";
+import { abortLoop, isLoopActive } from "../../../src/server/runLoop.js";
 import { runLogPath } from "../../../src/state/runLog.js";
 import { SCHEMA_VERSION, type RunManifest, type RunStatus } from "../../../src/types.js";
 import { defaultStateRoot } from "../../../src/state/runIndex.js";
@@ -458,6 +462,466 @@ describe("runRoutes", () => {
       const body = res.body as { error: string };
       expect(body.error).toContain("not");
       expect(body.error).toContain("paused");
+    });
+  });
+
+  describe("handleStopRun", () => {
+    it("rejects invalid runId", async () => {
+      const res = await handleStopRun(BAD_RUN_ID, { mode: "soft" });
+      expect(res.status).toBe(400);
+    });
+
+    it("rejects invalid mode", async () => {
+      const res = await handleStopRun(VALID_RUN_ID, { mode: "explode" });
+      expect(res.status).toBe(400);
+      const body = res.body as { error: string };
+      expect(body.error).toBe("invalid body");
+    });
+
+    it("defaults mode to 'soft' when body is empty", async () => {
+      const stateRoot = defaultStateRoot();
+      const runDir = join(stateRoot, VALID_RUN_ID);
+      await mkdir(runDir, { recursive: true });
+      await writeFile(join(runDir, "manifest.json"), JSON.stringify(makeManifest("running")));
+
+      const res = await handleStopRun(VALID_RUN_ID, {});
+      expect(res.status).toBe(200);
+      const body = res.body as { mode: string };
+      expect(body.mode).toBe("soft");
+    });
+
+    it("returns 404 when manifest does not exist", async () => {
+      const res = await handleStopRun(VALID_RUN_ID, { mode: "soft" });
+      expect(res.status).toBe(404);
+    });
+
+    it("returns 409 when run is already in terminal status", async () => {
+      const stateRoot = defaultStateRoot();
+      const runDir = join(stateRoot, VALID_RUN_ID);
+      await mkdir(runDir, { recursive: true });
+      await writeFile(join(runDir, "manifest.json"), JSON.stringify(makeManifest("completed")));
+
+      const res = await handleStopRun(VALID_RUN_ID, { mode: "soft" });
+      expect(res.status).toBe(409);
+      const body = res.body as { error: string };
+      expect(body.error).toContain("terminal");
+    });
+
+    it("includes lastHeartbeatAt in the manifest response", async () => {
+      const stateRoot = defaultStateRoot();
+      const runDir = join(stateRoot, VALID_RUN_ID);
+      await mkdir(runDir, { recursive: true });
+      await writeFile(join(runDir, "manifest.json"), JSON.stringify(makeManifest("running")));
+
+      // No heartbeat yet → field is null.
+      const before = await handleGetManifest(VALID_RUN_ID);
+      expect(before.status).toBe(200);
+      expect((before.body as { lastHeartbeatAt: string | null }).lastHeartbeatAt).toBeNull();
+
+      // Write a heartbeat and re-fetch.
+      const { writeHeartbeat } = await import("../../../src/state/heartbeat.js");
+      await writeHeartbeat(runDir, VALID_RUN_ID);
+      const after = await handleGetManifest(VALID_RUN_ID);
+      const body = after.body as { lastHeartbeatAt: string | null; loopActive: boolean };
+      expect(body.lastHeartbeatAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+      expect(body.loopActive).toBe(false);
+    });
+
+    it("returns 200 with stopped: false when no loop is active for a running run", async () => {
+      // Manual-autonomy runs don't have a background loop, so a stop request
+      // succeeds but reports stopped=false (nothing to abort). The "stopping"
+      // status still gets written so the UI shows the user's intent.
+      const stateRoot = defaultStateRoot();
+      const runDir = join(stateRoot, VALID_RUN_ID);
+      await mkdir(runDir, { recursive: true });
+      await writeFile(join(runDir, "manifest.json"), JSON.stringify(makeManifest("running")));
+
+      const res = await handleStopRun(VALID_RUN_ID, { mode: "soft" });
+      expect(res.status).toBe(200);
+      const body = res.body as {
+        runId: string;
+        mode: string;
+        loopWasActive: boolean;
+        stopped: boolean;
+      };
+      expect(body.runId).toBe(VALID_RUN_ID);
+      expect(body.mode).toBe("soft");
+      expect(body.loopWasActive).toBe(false);
+      expect(body.stopped).toBe(false);
+    });
+  });
+
+  describe("handleRecoverRun", () => {
+    it("rejects invalid runId", async () => {
+      const res = await handleRecoverRun(BAD_RUN_ID);
+      expect(res.status).toBe(400);
+    });
+
+    it("returns 404 when manifest does not exist", async () => {
+      const res = await handleRecoverRun(VALID_RUN_ID);
+      expect(res.status).toBe(404);
+    });
+
+    it("returns 409 when status is terminal (completed)", async () => {
+      const stateRoot = defaultStateRoot();
+      const runDir = join(stateRoot, VALID_RUN_ID);
+      await mkdir(runDir, { recursive: true });
+      await writeFile(join(runDir, "manifest.json"), JSON.stringify(makeManifest("completed")));
+
+      const res = await handleRecoverRun(VALID_RUN_ID);
+      expect(res.status).toBe(409);
+      const body = res.body as { error: string };
+      expect(body.error).toContain("completed");
+    });
+
+    it("returns 409 when status is paused (already settled)", async () => {
+      const stateRoot = defaultStateRoot();
+      const runDir = join(stateRoot, VALID_RUN_ID);
+      await mkdir(runDir, { recursive: true });
+      await writeFile(join(runDir, "manifest.json"), JSON.stringify(makeManifest("paused")));
+
+      const res = await handleRecoverRun(VALID_RUN_ID);
+      expect(res.status).toBe(409);
+    });
+
+    it("returns 409 when heartbeat is fresh (loop likely alive)", async () => {
+      const stateRoot = defaultStateRoot();
+      const runDir = join(stateRoot, VALID_RUN_ID);
+      await mkdir(runDir, { recursive: true });
+      await writeFile(join(runDir, "manifest.json"), JSON.stringify(makeManifest("running")));
+      const { writeHeartbeat } = await import("../../../src/state/heartbeat.js");
+      await writeHeartbeat(runDir, VALID_RUN_ID); // just-written → fresh
+
+      const res = await handleRecoverRun(VALID_RUN_ID);
+      expect(res.status).toBe(409);
+      const body = res.body as { error: string };
+      expect(body.error).toContain("fresh heartbeat");
+    });
+
+    it("returns 200 and settles to paused when heartbeat is stale", async () => {
+      const stateRoot = defaultStateRoot();
+      const runDir = join(stateRoot, VALID_RUN_ID);
+      await mkdir(runDir, { recursive: true });
+      await writeFile(join(runDir, "manifest.json"), JSON.stringify(makeManifest("running")));
+      // Stale heartbeat: back-date it past the 60s crash threshold.
+      const { writeFile: wf } = await import("node:fs/promises");
+      await wf(
+        join(runDir, ".heartbeat"),
+        JSON.stringify({
+          ts: new Date(Date.now() - 5 * 60_000).toISOString(),
+          runId: VALID_RUN_ID,
+        }),
+      );
+
+      const res = await handleRecoverRun(VALID_RUN_ID);
+      expect(res.status).toBe(200);
+      const body = res.body as { previousStatus: string; lastHeartbeatAt: string };
+      expect(body.previousStatus).toBe("running");
+      expect(body.lastHeartbeatAt).toMatch(/^\d{4}/);
+
+      // Verify side effects: manifest moved to paused, recovery event logged.
+      const { readLogEvents } = await import("../../../src/state/runLog.js");
+      const { loadManifest } = await import("../../../src/state/runIndex.js");
+      const settled = await loadManifest(runDir);
+      expect(settled.status).toBe("paused");
+      const events = await readLogEvents(join(runDir, "run-log.jsonl"));
+      expect(events.some((e) => e.type === "run_recovered_from_crash")).toBe(true);
+    });
+
+    it("returns 200 and settles to paused when no heartbeat exists", async () => {
+      const stateRoot = defaultStateRoot();
+      const runDir = join(stateRoot, VALID_RUN_ID);
+      await mkdir(runDir, { recursive: true });
+      await writeFile(join(runDir, "manifest.json"), JSON.stringify(makeManifest("running")));
+
+      const res = await handleRecoverRun(VALID_RUN_ID);
+      expect(res.status).toBe(200);
+      const body = res.body as { lastHeartbeatAt: string | null };
+      expect(body.lastHeartbeatAt).toBeNull();
+    });
+  });
+
+  describe("handleRetryFromFailure", () => {
+    // Helper that builds a manifest with a failed repo + failed task so the
+    // retry endpoint has something concrete to reset. The repo has one
+    // completed task and one failed task to verify the partial-reset
+    // behavior — only failed work should be retried.
+    function makeFailedManifest(): RunManifest {
+      const base = makeManifest("failed");
+      base.repos = [
+        {
+          path: "/x/foo",
+          name: "foo",
+          stack: "jsts",
+          status: "failed",
+          testGate: false,
+          taskState: [
+            {
+              taskId: "11111111-1111-4111-8111-111111111111",
+              title: "first task",
+              acceptanceCriteria: [],
+              status: "completed",
+              attempts: 1,
+              tokensUsed: 5000,
+              durationMs: 30_000,
+              commitSha: "abc1234",
+            },
+            {
+              taskId: "22222222-2222-4222-8222-222222222222",
+              title: "second task",
+              acceptanceCriteria: [],
+              status: "failed",
+              attempts: 2,
+              tokensUsed: 3000,
+              durationMs: 20_000,
+              failureReason: "test gate failed on every attempt",
+              testOutput: "1 failing test\n",
+            },
+          ],
+        },
+      ];
+      return base;
+    }
+
+    afterEach(() => {
+      // Ensure the auto-restarted loop from a previous test doesn't leak.
+      if (isLoopActive(VALID_RUN_ID)) abortLoop(VALID_RUN_ID);
+    });
+
+    it("rejects invalid runId", async () => {
+      const res = await handleRetryFromFailure(BAD_RUN_ID, { originalApiKey: undefined });
+      expect(res.status).toBe(400);
+    });
+
+    it("returns 404 when manifest does not exist", async () => {
+      const res = await handleRetryFromFailure(VALID_RUN_ID, { originalApiKey: undefined });
+      expect(res.status).toBe(404);
+    });
+
+    it("returns 409 when status is not failed", async () => {
+      const stateRoot = defaultStateRoot();
+      const runDir = join(stateRoot, VALID_RUN_ID);
+      await mkdir(runDir, { recursive: true });
+      await writeFile(join(runDir, "manifest.json"), JSON.stringify(makeManifest("running")));
+
+      const res = await handleRetryFromFailure(VALID_RUN_ID, { originalApiKey: undefined });
+      expect(res.status).toBe(409);
+      const body = res.body as { error: string };
+      expect(body.error).toContain("failed");
+    });
+
+    it("resets failed tasks to pending and preserves completed ones", async () => {
+      const stateRoot = defaultStateRoot();
+      const runDir = join(stateRoot, VALID_RUN_ID);
+      await mkdir(runDir, { recursive: true });
+      await writeFile(join(runDir, "manifest.json"), JSON.stringify(makeFailedManifest()));
+
+      const res = await handleRetryFromFailure(VALID_RUN_ID, { originalApiKey: undefined });
+      expect(res.status).toBe(200);
+
+      const body = res.body as {
+        repoCount: number;
+        taskCount: number;
+        loopStarted: boolean;
+        manifest: RunManifest;
+      };
+      expect(body.repoCount).toBe(1);
+      expect(body.taskCount).toBe(1);
+      expect(body.loopStarted).toBe(true);
+
+      // Disk should match the returned manifest.
+      const { loadManifest } = await import("../../../src/state/runIndex.js");
+      const settled = await loadManifest(runDir);
+      expect(settled.status).toBe("paused");
+      const repo = settled.repos[0]!;
+      expect(repo.status).toBe("executing");
+
+      const completed = repo.taskState!.find(
+        (t) => t.taskId === "11111111-1111-4111-8111-111111111111",
+      )!;
+      const retried = repo.taskState!.find(
+        (t) => t.taskId === "22222222-2222-4222-8222-222222222222",
+      )!;
+      expect(completed.status).toBe("completed");
+      expect(completed.attempts).toBe(1); // untouched
+      expect(retried.status).toBe("pending");
+      expect(retried.attempts).toBe(0);
+      expect(retried.failureReason).toBeUndefined();
+      expect(retried.testOutput).toBeUndefined();
+    });
+
+    it("logs a run_retried_from_failure event", async () => {
+      const stateRoot = defaultStateRoot();
+      const runDir = join(stateRoot, VALID_RUN_ID);
+      await mkdir(runDir, { recursive: true });
+      await writeFile(join(runDir, "manifest.json"), JSON.stringify(makeFailedManifest()));
+
+      await handleRetryFromFailure(VALID_RUN_ID, { originalApiKey: undefined });
+
+      const { readLogEvents } = await import("../../../src/state/runLog.js");
+      const events = await readLogEvents(join(runDir, "run-log.jsonl"));
+      const retryEvent = events.find((e) => e.type === "run_retried_from_failure");
+      expect(retryEvent).toBeDefined();
+      if (retryEvent && "repoCount" in retryEvent) {
+        expect(retryEvent.repoCount).toBe(1);
+        expect(retryEvent.taskCount).toBe(1);
+      }
+    });
+
+    it("resets in_progress + counts pending tasks in failed repos (skip-repo case)", async () => {
+      // This is the byf-backend case: onFailure="skip-repo" bailed the loop
+      // after the first task failed, leaving later tasks at "pending" and
+      // (potentially) one at "in_progress" if it was mid-step. Retry should
+      // reset the failed + in_progress ones AND count the pending ones as
+      // retryable so the user sees the real number that'll re-run.
+      const m = makeManifest("failed");
+      m.repos = [
+        {
+          path: "/x/byf-backend",
+          name: "byf-backend",
+          stack: "jsts",
+          status: "failed",
+          testGate: false,
+          taskState: [
+            {
+              taskId: "11111111-1111-4111-8111-111111111111",
+              title: "logout",
+              acceptanceCriteria: [],
+              status: "failed",
+              attempts: 2,
+              tokensUsed: 8000,
+              durationMs: 45_000,
+              failureReason: "session model missing user_id",
+            },
+            {
+              taskId: "22222222-2222-4222-8222-222222222222",
+              title: "logout-all",
+              acceptanceCriteria: [],
+              status: "pending",
+              attempts: 0,
+              tokensUsed: 0,
+              durationMs: 0,
+            },
+            {
+              taskId: "33333333-3333-4333-8333-333333333333",
+              title: "session listing endpoints",
+              acceptanceCriteria: [],
+              status: "pending",
+              attempts: 0,
+              tokensUsed: 0,
+              durationMs: 0,
+            },
+          ],
+        },
+      ];
+
+      const stateRoot = defaultStateRoot();
+      const runDir = join(stateRoot, VALID_RUN_ID);
+      await mkdir(runDir, { recursive: true });
+      await writeFile(join(runDir, "manifest.json"), JSON.stringify(m));
+
+      const res = await handleRetryFromFailure(VALID_RUN_ID, { originalApiKey: undefined });
+      expect(res.status).toBe(200);
+      const body = res.body as { repoCount: number; taskCount: number };
+      expect(body.repoCount).toBe(1);
+      // 3 retryable: 1 failed (reset) + 2 pending (counted, unchanged).
+      expect(body.taskCount).toBe(3);
+
+      const { loadManifest } = await import("../../../src/state/runIndex.js");
+      const settled = await loadManifest(runDir);
+      const repo = settled.repos[0]!;
+      expect(repo.status).toBe("executing");
+      const tasks = repo.taskState!;
+      // The previously-failed task is now pending with cleared failure reason.
+      expect(tasks[0]!.status).toBe("pending");
+      expect(tasks[0]!.attempts).toBe(0);
+      expect(tasks[0]!.failureReason).toBeUndefined();
+      // The pending tasks stay pending — but they'll be picked up because
+      // the repo is now executing.
+      expect(tasks[1]!.status).toBe("pending");
+      expect(tasks[2]!.status).toBe("pending");
+    });
+
+    it("retries an interrupted repo whose status is 'executing' (thrown-failure case)", async () => {
+      // This is the case the user hit on byf-backend: an exception escaped
+      // step() → outer catch slapped manifest='failed' but repo was never
+      // settled. Repo is still 'executing' even though manifest says failed.
+      // Retry must handle this — not just repos with status=='failed'.
+      const m = makeManifest("failed");
+      m.repos = [
+        {
+          path: "/x/svc",
+          name: "svc",
+          stack: "jsts",
+          status: "executing",
+          testGate: false,
+          taskState: [
+            {
+              taskId: "11111111-1111-4111-8111-111111111111",
+              title: "task 1 (done)",
+              acceptanceCriteria: [],
+              status: "completed",
+              attempts: 1,
+              tokensUsed: 5000,
+              durationMs: 30_000,
+              commitSha: "abc1234",
+            },
+            {
+              taskId: "22222222-2222-4222-8222-222222222222",
+              title: "task 2 (in progress when killed)",
+              acceptanceCriteria: [],
+              status: "in_progress",
+              attempts: 1,
+              tokensUsed: 2000,
+              durationMs: 15_000,
+            },
+            {
+              taskId: "33333333-3333-4333-8333-333333333333",
+              title: "task 3 (never reached)",
+              acceptanceCriteria: [],
+              status: "pending",
+              attempts: 0,
+              tokensUsed: 0,
+              durationMs: 0,
+            },
+          ],
+        },
+      ];
+
+      const stateRoot = defaultStateRoot();
+      const runDir = join(stateRoot, VALID_RUN_ID);
+      await mkdir(runDir, { recursive: true });
+      await writeFile(join(runDir, "manifest.json"), JSON.stringify(m));
+
+      const res = await handleRetryFromFailure(VALID_RUN_ID, { originalApiKey: undefined });
+      expect(res.status).toBe(200);
+      const body = res.body as { repoCount: number; taskCount: number };
+      expect(body.repoCount).toBe(1);
+      // 2 retryable: in_progress (reset) + pending (counted, unchanged).
+      // Completed task is untouched.
+      expect(body.taskCount).toBe(2);
+
+      const { loadManifest } = await import("../../../src/state/runIndex.js");
+      const settled = await loadManifest(runDir);
+      const repo = settled.repos[0]!;
+      expect(repo.status).toBe("executing"); // stays/flipped to executing
+      const tasks = repo.taskState!;
+      expect(tasks[0]!.status).toBe("completed"); // preserved
+      expect(tasks[1]!.status).toBe("pending"); // in_progress → pending
+      expect(tasks[1]!.attempts).toBe(0);
+      expect(tasks[2]!.status).toBe("pending"); // already pending
+    });
+
+    it("rejects when api auth was used at run start but key is missing now", async () => {
+      const stateRoot = defaultStateRoot();
+      const runDir = join(stateRoot, VALID_RUN_ID);
+      await mkdir(runDir, { recursive: true });
+      const m = makeFailedManifest();
+      m.authMode = "api";
+      await writeFile(join(runDir, "manifest.json"), JSON.stringify(m));
+
+      const res = await handleRetryFromFailure(VALID_RUN_ID, { originalApiKey: undefined });
+      expect(res.status).toBe(400);
     });
   });
 });

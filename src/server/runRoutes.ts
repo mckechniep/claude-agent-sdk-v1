@@ -4,8 +4,10 @@ import { ulid } from "ulid";
 import { join } from "node:path";
 import { step } from "../orchestrator/run.js";
 import type { StepParams } from "../orchestrator/run.js";
-import { defaultStateRoot, loadManifest } from "../state/runIndex.js";
-import { readLogTailFromByte, runLogPath } from "../state/runLog.js";
+import { defaultStateRoot, loadManifest, saveManifest } from "../state/runIndex.js";
+import { appendLogEvent, readLogTailFromByte, runLogPath } from "../state/runLog.js";
+import { readHeartbeat } from "../state/heartbeat.js";
+import { recoverRun } from "./crashRecovery.js";
 import {
   readPlan,
   readPlanApproval,
@@ -21,7 +23,13 @@ import {
   type RunManifest,
   type StackId,
 } from "../types.js";
-import { startBackgroundLoop, isLoopActive, LoopAlreadyActiveError } from "./runLoop.js";
+import {
+  startBackgroundLoop,
+  isLoopActive,
+  LoopAlreadyActiveError,
+  requestStop,
+  type StopMode,
+} from "./runLoop.js";
 import type { ServerDeps, RouteResponse } from "./routes.js";
 
 const DiscoveredRepoSchema = z.object({
@@ -209,9 +217,7 @@ export async function handleSubmitDecisions(
   try {
     const manifest = await loadManifest(join(stateRoot, runId));
     const canRestart =
-      manifest.config.autonomy !== "manual" &&
-      !isTerminal(manifest.status) &&
-      !isLoopActive(runId);
+      manifest.config.autonomy !== "manual" && !isTerminal(manifest.status) && !isLoopActive(runId);
     if (canRestart) {
       const apiOk = manifest.authMode !== "api" || Boolean(deps.originalApiKey);
       if (apiOk) {
@@ -252,9 +258,18 @@ export async function handleGetManifest(runId: string): Promise<RouteResponse> {
     return { status: 400, body: { error: "invalid runId" } };
   }
   const stateRoot = defaultStateRoot();
+  const runDir = join(stateRoot, runId);
   try {
-    const manifest = await loadManifest(join(stateRoot, runId));
-    return { status: 200, body: { manifest, loopActive: isLoopActive(runId) } };
+    const manifest = await loadManifest(runDir);
+    const heartbeat = await readHeartbeat(runDir);
+    return {
+      status: 200,
+      body: {
+        manifest,
+        loopActive: isLoopActive(runId),
+        lastHeartbeatAt: heartbeat?.ts ?? null,
+      },
+    };
   } catch {
     return { status: 404, body: { error: `run ${runId} not found` } };
   }
@@ -394,6 +409,229 @@ export async function handleStreamLog(
   });
 }
 
+const StopBody = z.object({
+  mode: z.enum(["soft", "force"]).default("soft"),
+});
+
+export async function handleStopRun(runId: string, payload: unknown): Promise<RouteResponse> {
+  if (!isValidUlid(runId)) {
+    return { status: 400, body: { error: "invalid runId" } };
+  }
+  const parsed = StopBody.safeParse(payload ?? {});
+  if (!parsed.success) {
+    return { status: 400, body: { error: "invalid body", issues: parsed.error.issues } };
+  }
+  const mode: StopMode = parsed.data.mode;
+
+  const stateRoot = defaultStateRoot();
+  const runDir = join(stateRoot, runId);
+  let manifest: RunManifest;
+  try {
+    manifest = await loadManifest(runDir);
+  } catch {
+    return { status: 404, body: { error: `run ${runId} not found` } };
+  }
+
+  if (isTerminal(manifest.status)) {
+    return {
+      status: 409,
+      body: { error: `run ${runId} is already in terminal status "${manifest.status}"` },
+    };
+  }
+
+  const loopWasActive = isLoopActive(runId);
+  // For manual-autonomy runs there's no background loop, so a stop request
+  // is mostly a no-op — record it for the audit log, then return. Force
+  // mode in manual is meaningless since /step requests run to completion.
+  const stopped = requestStop(runId, mode);
+
+  // Write the transient "stopping" status so the UI can show it immediately
+  // rather than waiting for the loop's finally to fire. The loop's finally
+  // will overwrite this with "paused" once the in-flight step settles.
+  if (stopped && !isTerminal(manifest.status)) {
+    manifest.status = "stopping";
+    try {
+      await saveManifest(runDir, manifest);
+    } catch {
+      // Status mutation is a UX nicety; the authoritative write happens in
+      // the loop's finally. Don't fail the route on this.
+    }
+  }
+
+  try {
+    await appendLogEvent(runLogPath(stateRoot, runId), {
+      ts: new Date().toISOString(),
+      type: "run_loop_stop_requested",
+      runId,
+      mode,
+    });
+  } catch {
+    // Same logic — best-effort logging.
+  }
+
+  return {
+    status: 200,
+    body: {
+      runId,
+      mode,
+      loopWasActive,
+      stopped,
+    },
+  };
+}
+
+export async function handleRetryFromFailure(
+  runId: string,
+  deps: ServerDeps,
+): Promise<RouteResponse> {
+  if (!isValidUlid(runId)) {
+    return { status: 400, body: { error: "invalid runId" } };
+  }
+
+  const stateRoot = defaultStateRoot();
+  const runDir = join(stateRoot, runId);
+  let manifest: RunManifest;
+  try {
+    manifest = await loadManifest(runDir);
+  } catch {
+    return { status: 404, body: { error: `run ${runId} not found` } };
+  }
+
+  if (manifest.status !== "failed") {
+    return {
+      status: 409,
+      body: {
+        error: `run ${runId} is in status "${manifest.status}", not "failed" — retry-from-failure only applies to failed runs`,
+      },
+    };
+  }
+
+  if (manifest.authMode === "api" && !deps.originalApiKey) {
+    return {
+      status: 400,
+      body: { error: "run was started in api mode but ANTHROPIC_API_KEY is not available" },
+    };
+  }
+
+  // Reset interrupted repos back to retryable. "Interrupted" covers two
+  // distinct failure shapes:
+  //   1. Clean failure — onFailure="skip-repo" tripped, repo.status="failed",
+  //      remaining tasks at "pending".
+  //   2. Thrown failure — an exception escaped step() (onFailure="stop", a
+  //      git error, an SDK error). The outer catch slaps manifest="failed"
+  //      but the repo is left at "executing" with the in-flight task at
+  //      "in_progress" or "pending".
+  // Both cases need the same fix: any non-terminal task in a repo that
+  // isn't in a terminal/preflight state is retryable.
+  let repoCount = 0;
+  let taskCount = 0;
+  for (const repo of manifest.repos) {
+    if (!isInterruptedRepo(repo)) continue;
+    repoCount += 1;
+    let retryableInThisRepo = 0;
+    for (const task of repo.taskState ?? []) {
+      if (task.status === "completed" || task.status === "skipped") continue;
+      if (task.status === "failed" || task.status === "in_progress") {
+        task.status = "pending";
+        task.attempts = 0;
+        delete task.failureReason;
+        delete task.testOutput;
+      }
+      // "pending" tasks need no mutation but are retryable — the executor's
+      // existing for-loop will pick them up once the repo is back in
+      // "executing" status.
+      retryableInThisRepo += 1;
+      taskCount += 1;
+    }
+    if (retryableInThisRepo > 0) {
+      // Flip to (or leave at) "executing" so advanceRunning's runnable
+      // filter picks it up. If repo was already "executing" this is a no-op.
+      repo.status = "executing";
+    }
+  }
+
+  manifest.status = "paused";
+  await saveManifest(runDir, manifest);
+
+  await appendLogEvent(runLogPath(stateRoot, runId), {
+    ts: new Date().toISOString(),
+    type: "run_retried_from_failure",
+    runId,
+    repoCount,
+    taskCount,
+  });
+
+  // Auto-restart the loop. The endpoint's contract is "retry now" — we
+  // don't want the user to have to click Resume separately after a click
+  // they already made on "Retry from failure".
+  const stepParams = makeStepFactory({
+    runId,
+    stateRoot,
+    authMode: manifest.authMode,
+    apiKey: deps.originalApiKey,
+  });
+  let loopStarted = false;
+  try {
+    startBackgroundLoop({ runId, stateRoot, stepParams });
+    loopStarted = true;
+  } catch (err) {
+    if (!(err instanceof LoopAlreadyActiveError)) throw err;
+    // Another loop already running for this runId — rare but possible if
+    // the user double-clicked. Not an error; the loop will see the reset
+    // state on its next iteration.
+  }
+
+  return {
+    status: 200,
+    body: {
+      runId,
+      manifest,
+      repoCount,
+      taskCount,
+      loopStarted,
+    },
+  };
+}
+
+export async function handleRecoverRun(runId: string): Promise<RouteResponse> {
+  if (!isValidUlid(runId)) {
+    return { status: 400, body: { error: "invalid runId" } };
+  }
+  const outcome = await recoverRun(defaultStateRoot(), runId);
+
+  if (outcome.kind === "recovered") {
+    return {
+      status: 200,
+      body: {
+        runId,
+        previousStatus: outcome.previousStatus,
+        lastHeartbeatAt: outcome.lastHeartbeatAt,
+      },
+    };
+  }
+  if (outcome.reason === "not-found") {
+    return { status: 404, body: { error: `run ${runId} not found` } };
+  }
+  if (outcome.reason === "terminal-status") {
+    return {
+      status: 409,
+      body: {
+        error: `run ${runId} is in status "${outcome.detail}" — recovery only applies to non-terminal runs`,
+      },
+    };
+  }
+  if (outcome.reason === "fresh-heartbeat") {
+    return {
+      status: 409,
+      body: {
+        error: `run ${runId} has a fresh heartbeat — the loop appears to still be alive. Use stop instead.`,
+      },
+    };
+  }
+  // write-failed
+  return { status: 500, body: { error: outcome.detail ?? "recovery failed" } };
+}
+
 export async function handleResumeRun(runId: string, deps: ServerDeps): Promise<RouteResponse> {
   if (!isValidUlid(runId)) {
     return { status: 400, body: { error: "invalid runId" } };
@@ -442,6 +680,33 @@ export async function handleResumeRun(runId: string, deps: ServerDeps): Promise<
 
 function isValidUlid(id: string): boolean {
   return /^[0-9A-HJKMNP-TV-Z]{26}$/.test(id);
+}
+
+/**
+ * A repo is "interrupted" — eligible for retry-from-failure — when:
+ *   - It's past preflight (has a planned taskState)
+ *   - It's not in a terminal state (completed/skipped)
+ *   - It still has non-terminal tasks the executor can re-attempt
+ *
+ * Pre-execution states (pending, analyzing, awaiting-proposal-approval,
+ * planning, awaiting-plan-approval) are excluded because they need a
+ * different recovery path: re-running analyze/plan or approving the
+ * existing artifact. The retry button can't help those.
+ */
+function isInterruptedRepo(repo: RunManifest["repos"][number]): boolean {
+  if (repo.status === "completed" || repo.status === "skipped") return false;
+  if (
+    repo.status === "pending" ||
+    repo.status === "analyzing" ||
+    repo.status === "awaiting-proposal-approval" ||
+    repo.status === "planning" ||
+    repo.status === "awaiting-plan-approval"
+  ) {
+    return false;
+  }
+  // Retryable states: "executing" (mid-work when the run failed) and "failed".
+  if (!repo.taskState || repo.taskState.length === 0) return false;
+  return repo.taskState.some((t) => t.status !== "completed" && t.status !== "skipped");
 }
 
 function isTerminal(status: string): boolean {

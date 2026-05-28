@@ -12,7 +12,7 @@ function makeManifest(overrides: Partial<RunManifest> = {}): RunManifest {
     authMode: "subscription",
     config: {
       targetDir: "/x",
-      autonomy: "batched",
+      autonomy: "supervised",
       tier: "balanced",
       concurrency: 1,
       checkpointEvery: 1,

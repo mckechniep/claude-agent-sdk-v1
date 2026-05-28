@@ -18,12 +18,17 @@ import {
   handleGetLog,
   handleGetManifest,
   handleGetRepoArtifacts,
+  handleRecoverRun,
   handleResumeRun,
+  handleRetryFromFailure,
   handleStartRun,
   handleStepRun,
+  handleStopRun,
   handleStreamLog,
   handleSubmitDecisions,
 } from "./runRoutes.js";
+import { sweepCrashedRuns } from "./crashRecovery.js";
+import { defaultStateRoot } from "../state/runIndex.js";
 
 const DEFAULT_PORT = 3737;
 const ALLOWED_ORIGINS = new Set(["http://localhost:5173", "http://127.0.0.1:5173"]);
@@ -159,6 +164,16 @@ async function route(req: IncomingMessage, res: ServerResponse, deps: ServerDeps
       if (method === "POST" && action === "resume") {
         return send(res, await handleResumeRun(runId, deps));
       }
+      if (method === "POST" && action === "stop") {
+        const body = await readJsonBody(req);
+        return send(res, await handleStopRun(runId, body));
+      }
+      if (method === "POST" && action === "recover") {
+        return send(res, await handleRecoverRun(runId));
+      }
+      if (method === "POST" && action === "retry-from-failure") {
+        return send(res, await handleRetryFromFailure(runId, deps));
+      }
     }
 
     send(res, { status: 404, body: { error: "not found", path } });
@@ -172,6 +187,24 @@ export function startServer(port = DEFAULT_PORT): { close: () => Promise<void>; 
   const deps: ServerDeps = {
     originalApiKey: process.env.ANTHROPIC_API_KEY,
   };
+
+  // Fire-and-forget recovery sweep — runs concurrently with `listen()`. The
+  // dashboard's first manifest fetch can be served from the recovered state
+  // because file writes are atomic; if the user lands on the dashboard
+  // mid-sweep they may see "running" once then "paused" on the next refresh,
+  // which is fine. Awaiting the sweep would delay server readiness.
+  void sweepCrashedRuns(defaultStateRoot())
+    .then((report) => {
+      if (report.recovered.length > 0) {
+        console.warn(
+          `[agent-orchestrator] recovered ${report.recovered.length} crashed run(s) on startup`,
+        );
+      }
+    })
+    .catch((err) => {
+      const message = err instanceof Error ? err.message : String(err);
+      console.warn(`[agent-orchestrator] crash recovery sweep failed: ${message}`);
+    });
 
   const server = createServer((req, res) => {
     applyCors(req, res);

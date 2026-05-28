@@ -21,6 +21,7 @@ export interface PlanParams {
   thoroughness?: Thoroughness;
   model?: string;
   queryFn?: Parameters<typeof runQuery>[0]["queryFn"];
+  abortSignal?: AbortSignal;
 }
 
 export interface PlanResult {
@@ -58,6 +59,7 @@ export async function* planStream(params: PlanParams): AsyncGenerator<QueryEvent
     tracker: params.tracker,
     model: params.model,
     queryFn: params.queryFn,
+    abortSignal: params.abortSignal,
   });
 
   let finalText = "";

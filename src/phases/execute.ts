@@ -29,6 +29,7 @@ export interface ExecuteParams {
   testTimeoutMs: number;
   model?: string;
   queryFn?: Parameters<typeof runQuery>[0]["queryFn"];
+  abortSignal?: AbortSignal;
 }
 
 export interface ExecuteOutcome extends TaskState {
@@ -75,6 +76,7 @@ export async function* executeStream(
       tracker: params.tracker,
       model: params.model,
       queryFn: params.queryFn,
+      abortSignal: params.abortSignal,
     });
 
     let tokensThisAttempt = 0;

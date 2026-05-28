@@ -4,7 +4,7 @@
 // update this file by hand. v0.2 candidate: extract the zod-free type half
 // into a shared package and import from both sides.
 
-export type AutonomyMode = "manual" | "batched" | "yolo";
+export type AutonomyMode = "manual" | "supervised" | "yolo";
 export type ModelTier = "thorough" | "balanced" | "fast" | "custom";
 export type ModelId =
   | "claude-sonnet-4-6"
@@ -22,6 +22,7 @@ export type RunStatus =
   | "preflight"
   | "awaiting-run-confirmation"
   | "running"
+  | "stopping"
   | "paused"
   | "completed"
   | "failed";
@@ -160,12 +161,29 @@ export type LogEvent =
   | { ts: string; type: "run_loop_completed"; runId: string }
   | { ts: string; type: "run_loop_failed"; runId: string }
   | { ts: string; type: "run_loop_aborted"; runId: string }
+  | { ts: string; type: "run_loop_stop_requested"; runId: string; mode: "soft" | "force" }
+  | { ts: string; type: "run_loop_force_aborted"; runId: string; duringStep: boolean }
+  | {
+      ts: string;
+      type: "run_recovered_from_crash";
+      runId: string;
+      previousStatus: RunStatus;
+      lastHeartbeatAt: string | null;
+    }
+  | {
+      ts: string;
+      type: "run_retried_from_failure";
+      runId: string;
+      repoCount: number;
+      taskCount: number;
+    }
   | { ts: string; type: "run_loop_awaiting_decision"; runId: string; status: RunStatus }
   | { ts: string; type: "run_loop_error"; runId: string; message: string };
 
 export type LoopState =
   | "idle"
   | "active"
+  | "stopping"
   | "paused"
   | "completed"
   | "failed"

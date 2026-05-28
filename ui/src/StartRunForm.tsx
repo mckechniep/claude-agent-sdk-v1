@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { api, type AuthMode, type AuthStatus, type DiscoveredRepo } from "./api";
 import { navigate } from "./router";
 import { Breadcrumbs } from "./Breadcrumbs";
+import { InfoBadge } from "./InfoBadge";
 import type {
   AutonomyMode,
   ModelTier,
@@ -39,7 +40,7 @@ export function StartRunForm() {
   const [scan, setScan] = useState<ScanState>({ phase: "idle", repos: [] });
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
-  const [autonomy, setAutonomy] = useState<AutonomyMode>("batched");
+  const [autonomy, setAutonomy] = useState<AutonomyMode>("supervised");
   const [tier, setTier] = useState<ModelTier>("balanced");
   const [concurrency, setConcurrency] = useState(1);
   const [advancedOpen, setAdvancedOpen] = useState(false);
@@ -243,7 +244,38 @@ export function StartRunForm() {
 
           <div className="setting-grid">
             <label className="field">
-              <span className="field-label">autonomy</span>
+              <span className="field-label">
+                autonomy
+                <InfoBadge label="About autonomy">
+                  Controls how the background loop runs and which approval
+                  gates stop it.
+                  <ul>
+                    <li>
+                      <code>manual</code> — no background loop. You POST{" "}
+                      <code>/step</code> yourself to advance each phase.
+                      Analyze runs one repo at a time. Every gate is a
+                      manual click. Pick this when you want full control or
+                      are debugging the orchestrator itself.
+                    </li>
+                    <li>
+                      <code>supervised</code> — background loop drives the
+                      run between gates. <strong>Still stops at every
+                      approval gate</strong> (proposal, plan, run-start);
+                      the loop auto-resumes when you submit a decision.
+                      Preflight runs repos in parallel. Pick this when you
+                      want hands-off scheduling but still want to review
+                      each proposal + plan + the final go-no-go.
+                    </li>
+                    <li>
+                      <code>yolo</code> — background loop runs end-to-end
+                      with <strong>no gates at all</strong>. Proposals,
+                      plans, and run-start are auto-approved as they
+                      appear. Pick this when you trust the plan and want
+                      zero-touch execution.
+                    </li>
+                  </ul>
+                </InfoBadge>
+              </span>
               <select
                 className="field-input"
                 value={autonomy}
@@ -252,15 +284,26 @@ export function StartRunForm() {
                 <option value="manual">
                   manual — stop at every gate
                 </option>
-                <option value="batched">
-                  batched — review proposal &amp; plan, then auto
+                <option value="supervised">
+                  supervised — loop auto-runs between gates, you approve each
                 </option>
                 <option value="yolo">yolo — no gates</option>
               </select>
             </label>
 
             <label className="field">
-              <span className="field-label">tier</span>
+              <span className="field-label">
+                tier
+                <InfoBadge label="About model tier">
+                  Picks the Claude model for analyze / plan / execute.
+                  <ul>
+                    <li><code>thorough</code> — Opus 4.7 across phases. Best reasoning, highest cost.</li>
+                    <li><code>balanced</code> — Sonnet 4.6. Solid default for most refactor work.</li>
+                    <li><code>fast</code> — Haiku 4.5. Cheapest, fastest; best for small well-scoped tasks.</li>
+                  </ul>
+                  Switch to <code>custom</code> later in the manifest config to override per phase.
+                </InfoBadge>
+              </span>
               <select
                 className="field-input"
                 value={tier}
@@ -273,7 +316,17 @@ export function StartRunForm() {
             </label>
 
             <label className="field">
-              <span className="field-label">concurrency</span>
+              <span className="field-label">
+                concurrency
+                <InfoBadge label="About concurrency">
+                  How many repos the executor processes in parallel. Each
+                  parallel slot runs its own SDK query — useful when working
+                  across independent repos, but multiplies token spend per
+                  wall-clock minute. Stay at <code>1</code> unless you&apos;ve
+                  set <code>--max-concurrent-anthropic-requests</code> high
+                  enough to handle the burst.
+                </InfoBadge>
+              </span>
               <select
                 className="field-input"
                 value={concurrency}
@@ -306,7 +359,17 @@ export function StartRunForm() {
           {advancedOpen && (
             <div className="setting-grid setting-grid-advanced">
               <label className="field">
-                <span className="field-label">checkpoint every (tasks)</span>
+                <span className="field-label">
+                  checkpoint every (tasks)
+                  <InfoBadge label="About checkpoint cadence">
+                    Pauses the loop after every N completed tasks so you can
+                    inspect progress before more work happens. <code>0</code>
+                    disables checkpointing (loop runs until completion or
+                    failure). <code>1</code> is the default — stop after each
+                    task. Useful for unfamiliar repos where you want a
+                    look-see before committing more SDK budget.
+                  </InfoBadge>
+                </span>
                 <input
                   className="field-input"
                   type="number"
@@ -316,7 +379,19 @@ export function StartRunForm() {
                 />
               </label>
               <label className="field">
-                <span className="field-label">on failure</span>
+                <span className="field-label">
+                  on failure
+                  <InfoBadge label="About failure handling">
+                    What to do when a task fails (test gate failure, agent
+                    can&apos;t make progress, etc.).
+                    <ul>
+                      <li><code>stop</code> — halt the entire run on first failure.</li>
+                      <li><code>skip-task</code> — mark the task failed, move to the next task in this repo.</li>
+                      <li><code>skip-repo</code> — mark the whole repo failed, move to the next repo.</li>
+                      <li><code>retry</code> — re-attempt the task up to <code>max retries</code> times.</li>
+                    </ul>
+                  </InfoBadge>
+                </span>
                 <select
                   className="field-input"
                   value={onFailure}
@@ -329,7 +404,17 @@ export function StartRunForm() {
                 </select>
               </label>
               <label className="field">
-                <span className="field-label">max retries</span>
+                <span className="field-label">
+                  max retries
+                  <InfoBadge label="About retries">
+                    How many additional attempts the executor gets when a
+                    task fails. Applies to both <code>retry</code> on-failure
+                    mode and the executor&apos;s built-in test-gate retry
+                    (when the agent makes changes but tests fail, it sees
+                    the failing output and tries again). <code>1</code>
+                    means up to 2 total attempts; <code>0</code> = no retries.
+                  </InfoBadge>
+                </span>
                 <input
                   className="field-input"
                   type="number"
@@ -339,7 +424,20 @@ export function StartRunForm() {
                 />
               </label>
               <label className="field">
-                <span className="field-label">test gate</span>
+                <span className="field-label">
+                  test gate
+                  <InfoBadge label="About the test gate">
+                    Whether to run the repo&apos;s test command after each
+                    task and only commit if it passes.
+                    <ul>
+                      <li><code>required</code> — must pass to commit. Safest, slowest.</li>
+                      <li><code>skip</code> — commit edits without testing. Fastest, riskiest.</li>
+                      <li><code>per-repo</code> — use the <code>testGate</code> field set per-repo in the manifest.</li>
+                    </ul>
+                    The test command is auto-detected from the stack profile
+                    (e.g. <code>pnpm test</code> for jsts).
+                  </InfoBadge>
+                </span>
                 <select
                   className="field-input"
                   value={testGate}
@@ -351,7 +449,16 @@ export function StartRunForm() {
                 </select>
               </label>
               <label className="field">
-                <span className="field-label">test timeout (ms)</span>
+                <span className="field-label">
+                  test timeout (ms)
+                  <InfoBadge label="About test timeout">
+                    How long the test command can run before being killed
+                    and treated as a failure. Defaults to 5 minutes
+                    (<code>300000</code> ms). Bump higher for slow integration
+                    suites; lower if you want fast feedback on a tight unit
+                    test loop.
+                  </InfoBadge>
+                </span>
                 <input
                   className="field-input"
                   type="number"

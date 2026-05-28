@@ -94,6 +94,15 @@ function applyEvent(state: RunViewModel, event: LogEvent): RunViewModel {
     case "run_loop_aborted":
       loopState = "aborted";
       break;
+    case "run_loop_stop_requested":
+      // Transient signal — covers the gap between the user clicking Stop and
+      // the loop actually exiting. A second stop_requested with mode "force"
+      // keeps loopState at "stopping" until the force_aborted event lands.
+      loopState = "stopping";
+      break;
+    case "run_loop_force_aborted":
+      loopState = "aborted";
+      break;
     case "phase_started":
       currentRepoPath = event.repoPath;
       currentTaskId = null;
@@ -166,9 +175,12 @@ function deriveLoopStateFromStatus(
       return "failed";
     case "paused":
       return "paused";
+    case "stopping":
+      return "stopping";
     case "running":
-      // Don't overwrite a more-recent aborted/paused signal from events.
-      if (prior === "aborted" || prior === "paused") return prior;
+      // Don't overwrite a more-recent stopping/aborted/paused signal from
+      // events — those represent more-recent state than the manifest read.
+      if (prior === "aborted" || prior === "paused" || prior === "stopping") return prior;
       return "active";
     default:
       return prior ?? "idle";

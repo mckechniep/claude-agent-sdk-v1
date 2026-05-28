@@ -13,9 +13,9 @@ const minimalInput = {
 };
 
 describe("RunConfigSchema", () => {
-  it("applies autonomy=batched and tier=balanced as defaults", () => {
+  it("applies autonomy=supervised and tier=balanced as defaults", () => {
     const parsed = RunConfigSchema.parse(minimalInput);
-    expect(parsed.autonomy).toBe("batched");
+    expect(parsed.autonomy).toBe("supervised");
     expect(parsed.tier).toBe("balanced");
   });
 

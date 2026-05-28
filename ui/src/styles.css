@@ -336,6 +336,18 @@ pre {
   color: var(--ink);
 }
 
+.btn-danger {
+  background: var(--err-soft);
+  color: var(--err);
+  border-color: var(--err-soft);
+}
+
+.btn-danger:hover:not(:disabled) {
+  background: var(--err);
+  color: var(--bg-elev);
+  border-color: var(--err);
+}
+
 .action-hint {
   font-size: 12.5px;
   color: var(--ink-mute);
@@ -616,6 +628,17 @@ pre {
 .pill-paused {
   background: var(--accent-soft);
   color: var(--accent);
+}
+
+.pill-stopping {
+  background: oklch(96% 0.04 90);
+  color: oklch(48% 0.16 90);
+  animation: pill-stopping-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes pill-stopping-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
 }
 
 /* ---------- discover form ---------- */
@@ -1295,6 +1318,191 @@ pre {
   background: var(--err-soft);
   color: var(--err);
 }
+.pill-loop-stopping {
+  background: oklch(96% 0.04 90);
+  color: oklch(48% 0.16 90);
+  animation: pill-stopping-pulse 1.6s ease-in-out infinite;
+}
+
+.run-header-stopping-hint {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+/* ---------- info badge ---------- */
+.info-badge-wrap {
+  position: relative;
+  display: inline-flex;
+  vertical-align: middle;
+  margin-left: 6px;
+}
+
+.info-badge {
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid var(--line-strong);
+  background: var(--bg-elev);
+  color: var(--ink-mute);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: help;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 120ms ease;
+}
+
+.info-badge:hover,
+.info-badge:focus-visible {
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-color: var(--accent);
+  outline: none;
+}
+
+.info-badge-popover {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  min-width: 240px;
+  max-width: 340px;
+  padding: 10px 12px;
+  border-radius: 6px;
+  background: var(--ink);
+  color: var(--bg-elev);
+  font-size: 12.5px;
+  line-height: 1.45;
+  text-align: left;
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 400;
+  z-index: 50;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease;
+  filter: drop-shadow(0 2px 6px oklch(0% 0 0 / 0.12));
+}
+
+/* Default (top): popover above the badge, arrow points down. */
+.info-badge-placement-top .info-badge-popover {
+  bottom: calc(100% + 8px);
+}
+.info-badge-placement-top .info-badge-popover::after {
+  content: "";
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 5px solid transparent;
+  border-top-color: var(--ink);
+}
+
+/* Bottom placement: popover below the badge, arrow points up. Used in
+   the failed-run banner near the top of the page where "top" placement
+   would clip against the viewport top. */
+.info-badge-placement-bottom .info-badge-popover {
+  top: calc(100% + 8px);
+}
+.info-badge-placement-bottom .info-badge-popover::after {
+  content: "";
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 5px solid transparent;
+  border-bottom-color: var(--ink);
+}
+
+.info-badge-wrap:hover .info-badge-popover,
+.info-badge-wrap:focus-within .info-badge-popover,
+.info-badge-pinned .info-badge-popover {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.info-badge-popover code {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  background: oklch(28% 0.02 250);
+  padding: 1px 4px;
+  border-radius: 3px;
+  color: var(--bg-elev);
+}
+
+.info-badge-popover strong {
+  color: var(--bg);
+}
+
+.info-badge-popover ul {
+  margin: 6px 0 0;
+  padding-left: 16px;
+}
+
+.info-badge-popover li {
+  margin: 2px 0;
+}
+
+/* ---------- liveness indicator ---------- */
+.pill-liveness {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-variant-numeric: tabular-nums;
+}
+
+.pill-liveness-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.pill-liveness-live {
+  background: var(--ok-soft);
+  color: var(--ok);
+}
+.pill-liveness-live .pill-liveness-dot {
+  background: var(--ok);
+  box-shadow: 0 0 0 0 var(--ok);
+  animation: liveness-pulse 1.8s ease-out infinite;
+}
+
+@keyframes liveness-pulse {
+  0% { box-shadow: 0 0 0 0 color-mix(in oklch, var(--ok) 60%, transparent); }
+  70% { box-shadow: 0 0 0 6px color-mix(in oklch, var(--ok) 0%, transparent); }
+  100% { box-shadow: 0 0 0 0 color-mix(in oklch, var(--ok) 0%, transparent); }
+}
+
+.pill-liveness-slow {
+  background: oklch(96% 0.04 90);
+  color: oklch(48% 0.16 90);
+}
+.pill-liveness-slow .pill-liveness-dot {
+  background: oklch(60% 0.16 90);
+}
+
+.pill-liveness-offline {
+  background: var(--err-soft);
+  color: var(--err);
+}
+.pill-liveness-offline .pill-liveness-dot {
+  background: var(--err);
+}
+
+.pill-liveness-idle {
+  background: var(--bg);
+  color: var(--ink-faint);
+  border: 1px solid var(--line);
+}
+.pill-liveness-idle .pill-liveness-dot {
+  background: var(--ink-faint);
+}
 
 /* ---------- start-a-run form ---------- */
 
@@ -1413,16 +1621,63 @@ pre {
 }
 
 .card-run-header .card-head {
-  align-items: center;
+  align-items: flex-start;
   flex-wrap: wrap;
   gap: 12px;
 }
 
+/* Vertical stack of "label: value [?]" rows. Switched from horizontal flex
+   so each row gets its own line + room for the InfoBadge popover to expand
+   without colliding with neighbors. */
 .run-header-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  margin-top: 4px;
+}
+
+.run-header-row {
+  display: grid;
+  grid-template-columns: 96px 1fr;
+  align-items: center;
+  gap: 12px;
+  min-height: 26px;
+}
+
+.run-header-row-label {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--ink-faint);
+  text-align: right;
+}
+
+.run-header-row-value {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+/* Action buttons (Resume / Recover / Stop) sit below the meta rows on
+   their own line — separated visually from the at-a-glance state. */
+.run-header-actions {
   display: flex;
   gap: 8px;
   align-items: center;
   flex-wrap: wrap;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--line);
+  width: 100%;
+  min-height: 1px;
+}
+
+.run-header-actions:empty {
+  display: none;
 }
 
 .run-header-budget {
@@ -1708,11 +1963,122 @@ pre {
   color: var(--accent);
 }
 
+/* ---------- failed run banner ---------- */
+.card-failed-banner {
+  background: var(--err-soft);
+  border: 1px solid var(--err);
+  border-radius: var(--r-lg);
+  padding: 18px 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.failed-banner-head {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.failed-banner-eyebrow {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--err);
+  opacity: 0.85;
+}
+
+.failed-banner-title {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.failed-banner-list {
+  list-style: none;
+  margin: 0;
+  padding: 10px 14px;
+  background: var(--bg-elev);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.failed-banner-row {
+  display: grid;
+  /* name | repo-status pill | task-title | reason | optional unreached */
+  grid-template-columns: minmax(80px, auto) auto minmax(120px, auto) 1fr auto;
+  gap: 10px;
+  align-items: baseline;
+  font-size: 13px;
+  min-width: 0;
+}
+
+.failed-banner-repo-status {
+  font-size: 10px;
+  padding: 2px 7px;
+  text-transform: lowercase;
+  letter-spacing: 0.04em;
+}
+
+.failed-banner-unreached {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ink-mute);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  padding: 2px 7px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.failed-banner-name {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.failed-banner-task {
+  color: var(--ink-mute);
+  font-size: 12.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.failed-banner-reason {
+  color: var(--err);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.failed-banner-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
 /* ---------- repo card grid (D4) ---------- */
 
 .repo-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  /* Bumped from 320 → 400 so longer task titles + 7-char SHAs fit on one
+     line without wrapping. Still collapses to single-column under ~440px
+     viewports thanks to auto-fill + minmax. */
+  grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
   gap: 14px;
 }
 

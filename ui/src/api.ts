@@ -130,6 +130,9 @@ export interface StartRunResponse {
 export interface ManifestResponse {
   manifest: RunManifest;
   loopActive: boolean;
+  // ISO timestamp of the most recent heartbeat, or null if the run has
+  // never had a background loop (e.g. manual autonomy) or pre-heartbeat.
+  lastHeartbeatAt: string | null;
 }
 
 export interface LogReplayResponse {
@@ -150,6 +153,15 @@ export interface SubmitDecisionsResponse {
 export interface ResumeRunResponse {
   runId: string;
   manifest: RunManifest;
+}
+
+export type StopMode = "soft" | "force";
+
+export interface StopRunResponse {
+  runId: string;
+  mode: StopMode;
+  loopWasActive: boolean;
+  stopped: boolean;
 }
 
 export interface RunLogStreamHandlers {
@@ -362,6 +374,29 @@ export const api = {
   resumeRun: (runId: string) =>
     fetch(`/api/run/${encodeURIComponent(runId)}/resume`, { method: "POST" }).then(
       json<ResumeRunResponse>,
+    ),
+
+  stopRun: (runId: string, mode: StopMode = "soft") =>
+    fetch(`/api/run/${encodeURIComponent(runId)}/stop`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mode }),
+    }).then(json<StopRunResponse>),
+
+  recoverRun: (runId: string) =>
+    fetch(`/api/run/${encodeURIComponent(runId)}/recover`, { method: "POST" }).then(
+      json<{ runId: string; previousStatus: string; lastHeartbeatAt: string | null }>,
+    ),
+
+  retryFromFailure: (runId: string) =>
+    fetch(`/api/run/${encodeURIComponent(runId)}/retry-from-failure`, { method: "POST" }).then(
+      json<{
+        runId: string;
+        manifest: RunManifest;
+        repoCount: number;
+        taskCount: number;
+        loopStarted: boolean;
+      }>,
     ),
 
   getRunLog: (runId: string, fromByte = 0) =>
