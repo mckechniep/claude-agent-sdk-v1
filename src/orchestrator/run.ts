@@ -156,7 +156,7 @@ async function advancePreflightOnce(
   const analyzeFn = p.analyzeFn ?? analyze;
   const planFn = p.planFn ?? plan;
   const persist = async (): Promise<void> => {
-    manifest.budget.tokensUsed = tracker.tokensUsed;
+    syncBudget(manifest, tracker);
     await saveManifest(runDir, manifest);
   };
 
@@ -269,7 +269,7 @@ async function advanceRunning(
 ): Promise<void> {
   const executeFn = p.executeFn ?? execute;
   const persist = async (): Promise<void> => {
-    manifest.budget.tokensUsed = tracker.tokensUsed;
+    syncBudget(manifest, tracker);
     await saveManifest(runDir, manifest);
   };
 
@@ -380,12 +380,16 @@ export async function step(p: StepParams): Promise<RunManifest> {
     maxTokens: manifest.config.maxTokens,
     maxDurationMs: manifest.config.maxDurationMs,
   });
+  // Restore prior accumulation so a resumed run keeps counting from where it
+  // paused (cost survives pause/resume, not just within one process).
   tracker.tokensUsed = manifest.budget.tokensUsed;
+  tracker.costUsd = manifest.budget.costUsd ?? 0;
+  if (manifest.budget.byModel) Object.assign(tracker.byModel, manifest.budget.byModel);
 
   const logPath = join(runDir, "run-log.jsonl");
   const log = (e: LogEvent): Promise<void> => appendLogEvent(logPath, e);
   const persist = async (): Promise<void> => {
-    manifest!.budget.tokensUsed = tracker.tokensUsed;
+    syncBudget(manifest!, tracker);
     await saveManifest(runDir, manifest!);
   };
 
@@ -435,6 +439,17 @@ export async function step(p: StepParams): Promise<RunManifest> {
     manifest.status = "failed";
     await persist();
     throw err;
+  }
+}
+
+// Mirror the live tracker (tokens + SDK-reported cost + per-model breakdown)
+// onto the manifest before each atomic save. Centralized so the several
+// persist() closures can't drift apart on what they sync.
+function syncBudget(manifest: RunManifest, tracker: BudgetTracker): void {
+  manifest.budget.tokensUsed = tracker.tokensUsed;
+  manifest.budget.costUsd = tracker.costUsd;
+  if (Object.keys(tracker.byModel).length > 0) {
+    manifest.budget.byModel = { ...tracker.byModel };
   }
 }
 

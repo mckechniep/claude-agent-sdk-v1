@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
-import { api } from "./api";
+import { api, type AuthMode } from "./api";
 import RepoCard from "./RepoCard";
 import TaskForegroundPanel from "./TaskForegroundPanel";
 import { navigate } from "./router";
@@ -7,7 +7,9 @@ import { Breadcrumbs } from "./Breadcrumbs";
 import { initRunViewModel, runReducer } from "./runReducer";
 import { InfoBadge } from "./InfoBadge";
 import type {
+  BudgetState,
   LogEvent,
+  ModelCost,
   RepoEntry,
   RunManifest,
   RunUpdate,
@@ -491,6 +493,7 @@ function DashboardHeader({
             >
               {m.budget.tokensUsed.toLocaleString()} tok
             </span>
+            <SpendReadout budget={m.budget} authMode={m.authMode} />
           </MetaRow>
 
           <MetaRow label="autonomy">
@@ -1017,6 +1020,74 @@ function RunConfirmationGate({
         </button>
       </div>
     </section>
+  );
+}
+
+function formatUsd(n: number): string {
+  if (n === 0) return "$0.00";
+  // Sub-cent runs would all read "$0.00" at 2dp, so widen precision below a cent.
+  if (n < 0.01) return `$${n.toFixed(4)}`;
+  return `$${n.toFixed(2)}`;
+}
+
+function ModelBreakdown({ models, showCost }: { models: [string, ModelCost][]; showCost: boolean }) {
+  return (
+    <ul className="spend-breakdown">
+      {models.map(([id, mc]) => (
+        <li key={id}>
+          <code>{id}</code> — {(mc.inputTokens + mc.outputTokens).toLocaleString()} tok
+          {showCost ? ` · ${formatUsd(mc.costUsd)}` : ""}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/**
+ * Run spend. Cost comes from the SDK (priced per model), so it is exact, not an
+ * estimate. The label is honest about what the number means per auth mode:
+ *   - api:          "billed" — real money charged to the API key.
+ *   - subscription: "≈ equivalent" — notional API price (a flat monthly plan is
+ *                   not billed per run); or "no per-run charge" if the SDK
+ *                   reported $0 for the run.
+ */
+function SpendReadout({ budget, authMode }: { budget: BudgetState; authMode: AuthMode }) {
+  const cost = budget.costUsd ?? 0;
+  const isApi = authMode === "api";
+  const models = Object.entries(budget.byModel ?? {}).sort((a, b) => b[1].costUsd - a[1].costUsd);
+
+  if (!isApi && cost === 0) {
+    return (
+      <span
+        className="run-header-spend run-header-spend-sub"
+        title="Subscription bills a flat monthly fee, not per run. The SDK reported no per-run dollar cost."
+      >
+        subscription · no per-run charge
+        {models.length > 0 && (
+          <InfoBadge label="Token usage by model" placement="bottom">
+            <ModelBreakdown models={models} showCost={false} />
+          </InfoBadge>
+        )}
+      </span>
+    );
+  }
+
+  return (
+    <span
+      className={`run-header-spend${isApi ? "" : " run-header-spend-sub"}`}
+      title={
+        isApi
+          ? "Dollar cost reported by the SDK, priced per model. This is what you're billed via the API key."
+          : "Notional API-equivalent cost reported by the SDK. Subscription bills a flat monthly fee, not per run — a gauge, not a charge."
+      }
+    >
+      {formatUsd(cost)} <span className="run-header-spend-label">{isApi ? "billed" : "≈ equiv"}</span>
+      {models.length > 0 && (
+        <InfoBadge label="Cost by model" placement="bottom">
+          <ModelBreakdown models={models} showCost />
+        </InfoBadge>
+      )}
+    </span>
   );
 }
 

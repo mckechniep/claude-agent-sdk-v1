@@ -118,11 +118,29 @@ export type RepoEntry = z.infer<typeof RepoEntrySchema>;
 
 export const UlidString = z.string().regex(/^[0-9A-HJKMNP-TV-Z]{26}$/, "expected a ULID");
 
+// Per-model usage + cost, sourced from the SDK result message's `modelUsage`
+// (the SDK prices each model itself, so this is not a local estimate). Keyed
+// by model id in BudgetState.byModel.
+export const ModelCostSchema = z.object({
+  inputTokens: z.number().int().nonnegative(),
+  outputTokens: z.number().int().nonnegative(),
+  cacheReadInputTokens: z.number().int().nonnegative(),
+  cacheCreationInputTokens: z.number().int().nonnegative(),
+  costUsd: z.number().nonnegative(),
+});
+export type ModelCost = z.infer<typeof ModelCostSchema>;
+
 export const BudgetStateSchema = z.object({
   tokensUsed: z.number().int().nonnegative(),
   startedAt: z.string().datetime(),
   estimatedTotalTokens: z.number().int().nonnegative().optional(),
+  // SDK-reported dollar cost. In API mode this is what you're billed; in
+  // subscription mode it is the notional API-equivalent (or 0 if the SDK does
+  // not price subscription runs) — the UI labels it accordingly.
   costUsd: z.number().nonnegative().optional(),
+  // Per-model breakdown so mixed-tier runs (e.g. haiku analyze + opus execute)
+  // show where the cost actually went, rather than one blended number.
+  byModel: z.record(z.string(), ModelCostSchema).optional(),
 });
 export type BudgetState = z.infer<typeof BudgetStateSchema>;
 

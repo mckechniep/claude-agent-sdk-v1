@@ -21,12 +21,26 @@ export class QueryAbortedError extends Error {
   }
 }
 
+/** Per-model usage as the SDK emits it in the result message's `modelUsage`. */
+export interface SdkModelUsage {
+  inputTokens?: number;
+  outputTokens?: number;
+  cacheReadInputTokens?: number;
+  cacheCreationInputTokens?: number;
+  costUSD?: number;
+}
+
 export interface QueryResult {
   messages: unknown[];
   finalText: string;
   tokensUsed: number;
   cacheCreationInputTokens: number;
   cacheReadInputTokens: number;
+  // SDK-reported dollar cost for this call (0 if the SDK does not price it,
+  // e.g. some subscription/OAuth runs). Never a local estimate.
+  costUsd: number;
+  // Per-model breakdown for this call, keyed by model id.
+  modelUsage: Record<string, SdkModelUsage>;
   durationMs: number;
 }
 
@@ -40,6 +54,9 @@ export interface SdkStreamMessage {
     cache_creation_input_tokens?: number;
     cache_read_input_tokens?: number;
   };
+  // Present on the terminal `result` message. The SDK prices each model itself.
+  total_cost_usd?: number;
+  modelUsage?: Record<string, SdkModelUsage>;
 }
 
 export type QueryEvent =
@@ -67,6 +84,8 @@ export async function* runQueryStream(
   let outputTokens = 0;
   let cacheCreationInputTokens = 0;
   let cacheReadInputTokens = 0;
+  let costUsd = 0;
+  let modelUsage: Record<string, SdkModelUsage> = {};
 
   yield { type: "started", ts: startedAt };
 
@@ -105,6 +124,8 @@ export async function* runQueryStream(
         outputTokens = msg.usage?.output_tokens ?? 0;
         cacheCreationInputTokens = msg.usage?.cache_creation_input_tokens ?? 0;
         cacheReadInputTokens = msg.usage?.cache_read_input_tokens ?? 0;
+        costUsd = msg.total_cost_usd ?? 0;
+        modelUsage = msg.modelUsage ?? {};
       }
       params.tracker.check();
     }
@@ -125,6 +146,10 @@ export async function* runQueryStream(
 
   const tokensUsed = inputTokens + outputTokens;
   params.tracker.add(tokensUsed);
+  // Cost + per-model usage come straight from the SDK's result message — the
+  // SDK prices each model, so mixed-tier runs are attributed correctly.
+  params.tracker.addCost(costUsd);
+  params.tracker.addModelUsage(modelUsage);
 
   return {
     messages,
@@ -132,6 +157,8 @@ export async function* runQueryStream(
     tokensUsed,
     cacheCreationInputTokens,
     cacheReadInputTokens,
+    costUsd,
+    modelUsage,
     durationMs: Date.now() - startedAt,
   };
 }

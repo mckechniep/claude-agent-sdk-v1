@@ -93,11 +93,20 @@ export interface RepoEntry {
   testGate: boolean;
 }
 
+export interface ModelCost {
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadInputTokens: number;
+  cacheCreationInputTokens: number;
+  costUsd: number;
+}
+
 export interface BudgetState {
   tokensUsed: number;
   startedAt: string;
   estimatedTotalTokens?: number;
   costUsd?: number;
+  byModel?: Record<string, ModelCost>;
 }
 
 export interface RunManifest {
