@@ -2,7 +2,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { z } from "zod";
 import { ulid } from "ulid";
 import { join } from "node:path";
-import { step } from "../orchestrator/run.js";
+import { step, switchRunAuthMode } from "../orchestrator/run.js";
 import type { StepParams } from "../orchestrator/run.js";
 import { defaultStateRoot, loadManifest, saveManifest } from "../state/runIndex.js";
 import { appendLogEvent, readLogTailFromByte, runLogPath } from "../state/runLog.js";
@@ -119,19 +119,9 @@ async function applyAuthSwitch(
       },
     };
   }
-  // Freeze spend-so-far under the OLD mode before switching, so the per-auth
-  // breakdown attributes it correctly even for runs created before this tally
-  // existed.
-  if (!manifest.budget.byAuthMode && manifest.budget.tokensUsed > 0) {
-    manifest.budget.byAuthMode = {
-      [manifest.authMode]: {
-        tokensUsed: manifest.budget.tokensUsed,
-        costUsd: manifest.budget.costUsd ?? 0,
-      },
-    };
-  }
-  manifest.authMode = requested;
-  await saveManifest(runDir, manifest);
+  // Shared seed-before-flip migration lives in run.ts so the CLI and server
+  // can't drift on the attribution ordering.
+  await switchRunAuthMode(manifest, runDir, requested);
   return null;
 }
 

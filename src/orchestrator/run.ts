@@ -469,6 +469,35 @@ function syncBudget(manifest: RunManifest, tracker: BudgetTracker): void {
   }
 }
 
+/**
+ * Switch how an existing run is billed for its remaining work. Freezes
+ * spend-so-far under the OLD mode (seeding budget.byAuthMode for runs created
+ * before that tally existed) BEFORE flipping manifest.authMode, so historical
+ * tokens stay attributed to the mode they were actually spent under. Persists
+ * the manifest. No-op when `requested` already matches the current mode.
+ *
+ * Does NOT validate credential availability — callers gate that: the HTTP route
+ * checks the server-held key, the CLI lets applyAuthMode throw on a missing key.
+ * Shared by the server (resume/retry routes) and the CLI (`agent resume --auth`).
+ */
+export async function switchRunAuthMode(
+  manifest: RunManifest,
+  runDir: string,
+  requested: AuthMode,
+): Promise<void> {
+  if (requested === manifest.authMode) return;
+  if (!manifest.budget.byAuthMode && manifest.budget.tokensUsed > 0) {
+    manifest.budget.byAuthMode = {
+      [manifest.authMode]: {
+        tokensUsed: manifest.budget.tokensUsed,
+        costUsd: manifest.budget.costUsd ?? 0,
+      },
+    };
+  }
+  manifest.authMode = requested;
+  await saveManifest(runDir, manifest);
+}
+
 function renderSummary(m: RunManifest): string {
   const lines = [`# Run ${m.runId}`, ``, `Status: ${m.status}`, ``];
   for (const repo of m.repos) {

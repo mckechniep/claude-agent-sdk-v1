@@ -37,7 +37,10 @@ program
 program
   .command("resume [runId]")
   .description("Resume a paused run")
-  .action((runId: string | undefined) => resumeCommand({ runId }));
+  .option("--auth <mode>", "switch billing for remaining work (api | subscription)")
+  .action((runId: string | undefined, opts: { auth?: string }) =>
+    resumeCommand({ runId, auth: opts.auth }),
+  );
 
 program.command("status").description("Show status (in-repo or global)").action(statusCommand);
 

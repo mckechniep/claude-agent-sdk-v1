@@ -1,11 +1,17 @@
+import { join } from "node:path";
 import { applyAuthMode } from "../auth/mode.js";
-import { runOrchestration } from "../orchestrator/run.js";
+import { readPersistedApiKeySync } from "../auth/keyStore.js";
+import { runOrchestration, switchRunAuthMode } from "../orchestrator/run.js";
 import { listRuns, defaultStateRoot } from "../state/runIndex.js";
 import { confirmPrompt, proposalGate, planGate } from "../tui/confirm.js";
-import type { RunManifest } from "../types.js";
+import { AUTH_MODES } from "../types.js";
+import type { AuthMode, RunManifest } from "../types.js";
 
 export interface ResumeOpts {
   runId?: string;
+  // Optional billing switch for the remaining work (parity with the dashboard
+  // BillingSwitch). Validated against AUTH_MODES.
+  auth?: string;
 }
 
 /** Count tasks already done vs. still to run across all repos in a manifest. */
@@ -49,9 +55,39 @@ export async function resumeCommand(opts: ResumeOpts): Promise<void> {
   }
   const manifest = entry.manifest;
 
-  // Re-apply the auth mode the run was created with. `api` needs
-  // ANTHROPIC_API_KEY in env; `subscription` uses the OAuth creds. Surface a
-  // missing key as a config error (exit 4) rather than a stack trace.
+  // Validate the optional billing switch up front.
+  if (opts.auth && !AUTH_MODES.includes(opts.auth as AuthMode)) {
+    console.error(`Invalid --auth "${opts.auth}". Allowed: ${AUTH_MODES.join(", ")}`);
+    process.exit(4);
+  }
+  const requestedAuth = opts.auth as AuthMode | undefined;
+
+  // Make a UI-stored API key usable from the CLI: if the env var isn't set,
+  // fall back to the encrypted store the auth card writes (mirrors the server's
+  // startup seeding). Without this, `--auth api` would fail for users who only
+  // ever entered their key through the web UI.
+  if (!process.env.ANTHROPIC_API_KEY) {
+    const stored = readPersistedApiKeySync();
+    if (stored) process.env.ANTHROPIC_API_KEY = stored;
+  }
+
+  // Apply a billing switch before re-applying auth, so the seed-before-flip
+  // migration runs and the continuation bills the new mode. Guard api-without-key
+  // here for a clean message rather than a half-applied switch.
+  if (requestedAuth && requestedAuth !== manifest.authMode) {
+    if (requestedAuth === "api" && !process.env.ANTHROPIC_API_KEY) {
+      console.error(
+        "cannot switch to --auth api: no ANTHROPIC_API_KEY in env or the encrypted store",
+      );
+      process.exit(4);
+    }
+    await switchRunAuthMode(manifest, join(stateRoot, runId), requestedAuth);
+    console.warn(`Switched billing for remaining work to ${requestedAuth}.`);
+  }
+
+  // Re-apply the (possibly switched) auth mode. `api` needs ANTHROPIC_API_KEY;
+  // `subscription` uses the OAuth creds. Surface a missing key as a config
+  // error (exit 4) rather than a stack trace.
   try {
     applyAuthMode(manifest.authMode);
   } catch (err) {

@@ -4,7 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { simpleGit } from "simple-git";
 import * as authMode from "../../../src/auth/mode.js";
-import { runOrchestration } from "../../../src/orchestrator/run.js";
+import { runOrchestration, switchRunAuthMode } from "../../../src/orchestrator/run.js";
+import { loadManifest, saveManifest } from "../../../src/state/runIndex.js";
 import { ulid } from "ulid";
 import type { RunConfig } from "../../../src/types.js";
 
@@ -230,5 +231,87 @@ describe("runOrchestration", () => {
     // Only the single remaining (pending) task re-executes; task 1 is skipped.
     expect(fakeExecute).toHaveBeenCalledTimes(1);
     expect(fakeExecute.mock.calls[0]![0].task.taskId).toBe(TASK2);
+  });
+
+  it("switchRunAuthMode freezes prior spend under the old mode before flipping", async () => {
+    await makeFixtureRepo(target, "alpha");
+    const noop = vi.fn(async () => ({
+      proposalPath: "/dev/null",
+      proposalMarkdown: "",
+      tokensUsed: 0,
+      durationMs: 0,
+    }));
+    const fakePlan = vi.fn(async () => ({
+      planPath: "/dev/null",
+      planMarkdown: "",
+      taskCount: 1,
+      tasks: [
+        {
+          taskId: "11111111-1111-1111-1111-111111111111",
+          title: "T",
+          acceptanceCriteria: [],
+          status: "pending" as const,
+          attempts: 0,
+          tokensUsed: 0,
+          durationMs: 0,
+        },
+      ],
+      estimatedTokens: 1000,
+      estimatedDurationMs: 60_000,
+      tokensUsed: 0,
+      durationMs: 0,
+    }));
+    const fakeExecute = vi.fn(async () => ({
+      taskId: "11111111-1111-1111-1111-111111111111",
+      title: "T",
+      acceptanceCriteria: [],
+      status: "completed" as const,
+      attempts: 1,
+      tokensUsed: 0,
+      durationMs: 0,
+      commitSha: "a".repeat(40),
+      filesChanged: [],
+      diff: "",
+    }));
+
+    const runId = ulid();
+    await runOrchestration({
+      runId,
+      authMode: "subscription",
+      config: baseConfig(target),
+      stateRoot,
+      selectRepos: async (repos) => repos.map((r) => r.path),
+      proposalGate: async () => "accept",
+      planGate: async () => "accept",
+      runConfirmation: async () => true,
+      authConfirmation: async () => true,
+      analyzeFn: noop,
+      planFn: fakePlan,
+      executeFn: fakeExecute,
+    });
+
+    const runDir = join(stateRoot, runId);
+    // Simulate a run created before per-auth tracking existed: spend recorded,
+    // but no byAuthMode tally.
+    const pre = await loadManifest(runDir);
+    delete pre.budget.byAuthMode;
+    pre.budget.tokensUsed = 1000;
+    pre.budget.costUsd = 0;
+    await saveManifest(runDir, pre);
+
+    const m = await loadManifest(runDir);
+    await switchRunAuthMode(m, runDir, "api");
+
+    const after = await loadManifest(runDir);
+    // The 1000 prior tokens are frozen under the OLD mode (subscription), and
+    // the run now bills api going forward.
+    expect(after.authMode).toBe("api");
+    expect(after.budget.byAuthMode).toEqual({ subscription: { tokensUsed: 1000, costUsd: 0 } });
+
+    // Idempotent: switching to the current mode is a no-op (no double-seed).
+    const again = await loadManifest(runDir);
+    await switchRunAuthMode(again, runDir, "api");
+    const after2 = await loadManifest(runDir);
+    expect(after2.budget.byAuthMode).toEqual({ subscription: { tokensUsed: 1000, costUsd: 0 } });
   });
 });
