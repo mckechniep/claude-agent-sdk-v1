@@ -468,24 +468,44 @@ export interface OrchestrationParams {
 
 export async function runOrchestration(p: OrchestrationParams): Promise<RunManifest> {
   const runId = p.runId ?? ulid();
-  const discovered = await discoverRepos({
-    targetDir: p.config.targetDir,
-    exclude: p.config.exclude,
-    include: p.config.include,
-  });
-  const selectedPaths = await p.selectRepos(discovered);
-  const selectedRepos = discovered.filter((r) => selectedPaths.includes(r.path));
 
-  let manifest = await step({
-    runId,
-    stateRoot: p.stateRoot,
-    authMode: p.authMode,
-    config: p.config,
-    selectedRepos,
-    analyzeFn: p.analyzeFn,
-    planFn: p.planFn,
-    executeFn: p.executeFn,
-  });
+  // Resume vs. fresh start. If a manifest already exists on disk for this runId,
+  // this is a resume (e.g. `agent resume`): the repo set and every task's status
+  // are already pinned, so we MUST skip discovery + selection (re-prompting the
+  // user to pick repos would be wrong, and re-deriving the set could drift).
+  // step() loads that manifest and walks its status forward — completed tasks
+  // are skipped by the execute loop, so resume continues, it does not restart.
+  const existing = p.runId ? await tryLoadManifest(join(p.stateRoot, runId)) : null;
+
+  let manifest: RunManifest;
+  if (existing) {
+    manifest = await step({
+      runId,
+      stateRoot: p.stateRoot,
+      analyzeFn: p.analyzeFn,
+      planFn: p.planFn,
+      executeFn: p.executeFn,
+    });
+  } else {
+    const discovered = await discoverRepos({
+      targetDir: p.config.targetDir,
+      exclude: p.config.exclude,
+      include: p.config.include,
+    });
+    const selectedPaths = await p.selectRepos(discovered);
+    const selectedRepos = discovered.filter((r) => selectedPaths.includes(r.path));
+
+    manifest = await step({
+      runId,
+      stateRoot: p.stateRoot,
+      authMode: p.authMode,
+      config: p.config,
+      selectedRepos,
+      analyzeFn: p.analyzeFn,
+      planFn: p.planFn,
+      executeFn: p.executeFn,
+    });
+  }
 
   while (
     manifest.status !== "completed" &&
