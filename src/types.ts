@@ -130,6 +130,13 @@ export const ModelCostSchema = z.object({
 });
 export type ModelCost = z.infer<typeof ModelCostSchema>;
 
+// Tokens + dollars attributed to a single auth mode within a run.
+export const AuthSpendSchema = z.object({
+  tokensUsed: z.number().int().nonnegative(),
+  costUsd: z.number().nonnegative(),
+});
+export type AuthSpend = z.infer<typeof AuthSpendSchema>;
+
 export const BudgetStateSchema = z.object({
   tokensUsed: z.number().int().nonnegative(),
   startedAt: z.string().datetime(),
@@ -141,6 +148,10 @@ export const BudgetStateSchema = z.object({
   // Per-model breakdown so mixed-tier runs (e.g. haiku analyze + opus execute)
   // show where the cost actually went, rather than one blended number.
   byModel: z.record(z.string(), ModelCostSchema).optional(),
+  // Per-auth-mode tally. A run can be billed differently across its life (e.g.
+  // started on subscription, resumed on api), so spend is attributed to the
+  // auth mode active when it was incurred — keyed by "api" | "subscription".
+  byAuthMode: z.record(z.enum(AUTH_MODES), AuthSpendSchema).optional(),
 });
 export type BudgetState = z.infer<typeof BudgetStateSchema>;
 

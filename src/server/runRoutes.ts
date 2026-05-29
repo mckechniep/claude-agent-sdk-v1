@@ -92,6 +92,49 @@ function makeStepFactory(args: {
   };
 }
 
+// Optional body for resume / retry-from-failure: switch how the run is billed
+// for its remaining work.
+const AuthSwitchBody = z.object({ authMode: z.enum(AUTH_MODES).optional() });
+
+/**
+ * Switch how a paused/failed run is billed before continuing it. Validates that
+ * api mode has a key available, seeds the per-auth-mode spend tally under the
+ * OLD mode (so spend already incurred stays attributed to the mode it was spent
+ * under), flips manifest.authMode, and persists. Returns an error RouteResponse,
+ * or null on success / no-op.
+ */
+async function applyAuthSwitch(
+  manifest: RunManifest,
+  runDir: string,
+  requested: AuthMode | undefined,
+  deps: ServerDeps,
+): Promise<RouteResponse | null> {
+  if (!requested || requested === manifest.authMode) return null;
+  if (requested === "api" && !deps.originalApiKey) {
+    return {
+      status: 400,
+      body: {
+        error:
+          "cannot switch to api mode: no ANTHROPIC_API_KEY available — set one in the auth card first",
+      },
+    };
+  }
+  // Freeze spend-so-far under the OLD mode before switching, so the per-auth
+  // breakdown attributes it correctly even for runs created before this tally
+  // existed.
+  if (!manifest.budget.byAuthMode && manifest.budget.tokensUsed > 0) {
+    manifest.budget.byAuthMode = {
+      [manifest.authMode]: {
+        tokensUsed: manifest.budget.tokensUsed,
+        costUsd: manifest.budget.costUsd ?? 0,
+      },
+    };
+  }
+  manifest.authMode = requested;
+  await saveManifest(runDir, manifest);
+  return null;
+}
+
 export async function handleStartRun(payload: unknown, deps: ServerDeps): Promise<RouteResponse> {
   const parsed = StartRunBody.safeParse(payload);
   if (!parsed.success) {
@@ -483,9 +526,14 @@ export async function handleStopRun(runId: string, payload: unknown): Promise<Ro
 export async function handleRetryFromFailure(
   runId: string,
   deps: ServerDeps,
+  payload?: unknown,
 ): Promise<RouteResponse> {
   if (!isValidUlid(runId)) {
     return { status: 400, body: { error: "invalid runId" } };
+  }
+  const switchParse = AuthSwitchBody.safeParse(payload ?? {});
+  if (!switchParse.success) {
+    return { status: 400, body: { error: "invalid body", issues: switchParse.error.issues } };
   }
 
   const stateRoot = defaultStateRoot();
@@ -505,6 +553,9 @@ export async function handleRetryFromFailure(
       },
     };
   }
+
+  const switchErr = await applyAuthSwitch(manifest, runDir, switchParse.data.authMode, deps);
+  if (switchErr) return switchErr;
 
   if (manifest.authMode === "api" && !deps.originalApiKey) {
     return {
@@ -632,15 +683,24 @@ export async function handleRecoverRun(runId: string): Promise<RouteResponse> {
   return { status: 500, body: { error: outcome.detail ?? "recovery failed" } };
 }
 
-export async function handleResumeRun(runId: string, deps: ServerDeps): Promise<RouteResponse> {
+export async function handleResumeRun(
+  runId: string,
+  deps: ServerDeps,
+  payload?: unknown,
+): Promise<RouteResponse> {
   if (!isValidUlid(runId)) {
     return { status: 400, body: { error: "invalid runId" } };
   }
+  const switchParse = AuthSwitchBody.safeParse(payload ?? {});
+  if (!switchParse.success) {
+    return { status: 400, body: { error: "invalid body", issues: switchParse.error.issues } };
+  }
 
   const stateRoot = defaultStateRoot();
+  const runDir = join(stateRoot, runId);
   let manifest: RunManifest;
   try {
-    manifest = await loadManifest(join(stateRoot, runId));
+    manifest = await loadManifest(runDir);
   } catch {
     return { status: 404, body: { error: `run ${runId} not found` } };
   }
@@ -651,6 +711,9 @@ export async function handleResumeRun(runId: string, deps: ServerDeps): Promise<
       body: { error: `run ${runId} is in status "${manifest.status}", not "paused"` },
     };
   }
+
+  const switchErr = await applyAuthSwitch(manifest, runDir, switchParse.data.authMode, deps);
+  if (switchErr) return switchErr;
 
   if (manifest.authMode === "api" && !deps.originalApiKey) {
     return {

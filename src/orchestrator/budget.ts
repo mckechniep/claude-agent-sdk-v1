@@ -1,4 +1,4 @@
-import { BudgetCapped, type ModelCost } from "../types.js";
+import { BudgetCapped, type AuthMode, type AuthSpend, type ModelCost } from "../types.js";
 
 export interface BudgetOptions {
   maxTokens?: number;
@@ -20,11 +20,25 @@ export class BudgetTracker {
   public costUsd = 0;
   // Per-model token + cost tally, keyed by model id (e.g. "claude-opus-4-8").
   public readonly byModel: Record<string, ModelCost> = {};
+  // Per-auth-mode tally, so spend after a billing switch is attributed to the
+  // mode that was active. Set `authMode` to the mode currently in effect; new
+  // tokens/cost are bucketed under it.
+  public readonly byAuthMode: Record<string, AuthSpend> = {};
+  public authMode: AuthMode | undefined;
   public readonly startedAt = Date.now();
   constructor(private readonly options: BudgetOptions) {}
 
+  private authBucket(): AuthSpend | undefined {
+    if (!this.authMode) return undefined;
+    const b = this.byAuthMode[this.authMode] ?? { tokensUsed: 0, costUsd: 0 };
+    this.byAuthMode[this.authMode] = b;
+    return b;
+  }
+
   add(tokens: number): void {
     this.tokensUsed += tokens;
+    const bucket = this.authBucket();
+    if (bucket) bucket.tokensUsed += tokens;
     if (this.options.maxTokens !== undefined && this.tokensUsed > this.options.maxTokens) {
       throw new BudgetCapped(
         `token cap exceeded: used ${this.tokensUsed} > cap ${this.options.maxTokens}`,
@@ -34,7 +48,10 @@ export class BudgetTracker {
 
   /** Accumulate the SDK-reported dollar cost for one phase/SDK call. */
   addCost(usd: number): void {
-    if (Number.isFinite(usd) && usd > 0) this.costUsd += usd;
+    if (!Number.isFinite(usd) || usd <= 0) return;
+    this.costUsd += usd;
+    const bucket = this.authBucket();
+    if (bucket) bucket.costUsd += usd;
   }
 
   /**

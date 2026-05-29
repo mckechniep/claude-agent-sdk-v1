@@ -385,6 +385,19 @@ export async function step(p: StepParams): Promise<RunManifest> {
   tracker.tokensUsed = manifest.budget.tokensUsed;
   tracker.costUsd = manifest.budget.costUsd ?? 0;
   if (manifest.budget.byModel) Object.assign(tracker.byModel, manifest.budget.byModel);
+  // Attribute new spend to the mode currently in effect. Restore the
+  // per-auth-mode tally; if a pre-feature run has spend but no tally, migrate
+  // it under the current mode (a billing switch seeds the OLD mode first, in
+  // the route, so byAuthMode is already present by the time we get here).
+  tracker.authMode = manifest.authMode;
+  if (manifest.budget.byAuthMode) {
+    Object.assign(tracker.byAuthMode, manifest.budget.byAuthMode);
+  } else if (manifest.budget.tokensUsed > 0) {
+    tracker.byAuthMode[manifest.authMode] = {
+      tokensUsed: manifest.budget.tokensUsed,
+      costUsd: manifest.budget.costUsd ?? 0,
+    };
+  }
 
   const logPath = join(runDir, "run-log.jsonl");
   const log = (e: LogEvent): Promise<void> => appendLogEvent(logPath, e);
@@ -450,6 +463,9 @@ function syncBudget(manifest: RunManifest, tracker: BudgetTracker): void {
   manifest.budget.costUsd = tracker.costUsd;
   if (Object.keys(tracker.byModel).length > 0) {
     manifest.budget.byModel = { ...tracker.byModel };
+  }
+  if (Object.keys(tracker.byAuthMode).length > 0) {
+    manifest.budget.byAuthMode = { ...tracker.byAuthMode };
   }
 }
 

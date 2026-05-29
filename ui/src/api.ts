@@ -382,10 +382,13 @@ export const api = {
   getManifest: (runId: string) =>
     fetch(`/api/run/${encodeURIComponent(runId)}/manifest`).then(json<ManifestResponse>),
 
-  resumeRun: (runId: string) =>
-    fetch(`/api/run/${encodeURIComponent(runId)}/resume`, { method: "POST" }).then(
-      json<ResumeRunResponse>,
-    ),
+  // authMode (optional) switches how the run is billed for its remaining work.
+  resumeRun: (runId: string, authMode?: AuthMode) =>
+    fetch(`/api/run/${encodeURIComponent(runId)}/resume`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(authMode ? { authMode } : {}),
+    }).then(json<ResumeRunResponse>),
 
   stopRun: (runId: string, mode: StopMode = "soft") =>
     fetch(`/api/run/${encodeURIComponent(runId)}/stop`, {
@@ -399,8 +402,12 @@ export const api = {
       json<{ runId: string; previousStatus: string; lastHeartbeatAt: string | null }>,
     ),
 
-  retryFromFailure: (runId: string) =>
-    fetch(`/api/run/${encodeURIComponent(runId)}/retry-from-failure`, { method: "POST" }).then(
+  retryFromFailure: (runId: string, authMode?: AuthMode) =>
+    fetch(`/api/run/${encodeURIComponent(runId)}/retry-from-failure`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(authMode ? { authMode } : {}),
+    }).then(
       json<{
         runId: string;
         manifest: RunManifest;

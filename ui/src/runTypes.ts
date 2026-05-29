@@ -101,12 +101,18 @@ export interface ModelCost {
   costUsd: number;
 }
 
+export interface AuthSpend {
+  tokensUsed: number;
+  costUsd: number;
+}
+
 export interface BudgetState {
   tokensUsed: number;
   startedAt: string;
   estimatedTotalTokens?: number;
   costUsd?: number;
   byModel?: Record<string, ModelCost>;
+  byAuthMode?: Record<string, AuthSpend>;
 }
 
 export interface RunManifest {

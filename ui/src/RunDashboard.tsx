@@ -143,12 +143,24 @@ export function RunDashboard({ runId }: { runId: string }) {
     return () => window.clearInterval(handle);
   }, [shouldPoll, refreshManifest]);
 
+  // Billing-mode switch for paused/failed runs. null = keep the run's current
+  // mode. apiKeyAvailable gates the "API key" option (you can't bill to a key
+  // the server doesn't have).
+  const [billingMode, setBillingMode] = useState<AuthMode | null>(null);
+  const [apiKeyAvailable, setApiKeyAvailable] = useState(false);
+  useEffect(() => {
+    void api
+      .authStatus()
+      .then((s) => setApiKeyAvailable(s.apiKeyDetected))
+      .catch(() => setApiKeyAvailable(false));
+  }, []);
+
   const onResume = async (): Promise<void> => {
     if (submittingResume) return;
     setSubmittingResume(true);
     setError(null);
     try {
-      await api.resumeRun(runId);
+      await api.resumeRun(runId, billingMode ?? undefined);
       await refreshManifest();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -207,7 +219,7 @@ export function RunDashboard({ runId }: { runId: string }) {
     setSubmittingRetry(true);
     setError(null);
     try {
-      await api.retryFromFailure(runId);
+      await api.retryFromFailure(runId, billingMode ?? undefined);
       await refreshManifest();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -289,6 +301,14 @@ export function RunDashboard({ runId }: { runId: string }) {
           onConfirm={onForceStop}
           onCancel={() => setForceConfirmOpen(false)}
           submitting={submittingStop === "force"}
+        />
+      )}
+      {(vm.manifest.status === "paused" || vm.manifest.status === "failed") && (
+        <BillingSwitch
+          current={vm.manifest.authMode}
+          selected={billingMode}
+          onChange={setBillingMode}
+          apiKeyAvailable={apiKeyAvailable}
         />
       )}
       {vm.manifest.status === "failed" && (
@@ -1023,6 +1043,71 @@ function RunConfirmationGate({
   );
 }
 
+/**
+ * Lets a paused/failed run be billed differently for its remaining work. The
+ * already-spent tokens stay attributed to the original mode (server seeds the
+ * per-auth tally before switching); this only changes billing going forward.
+ */
+function BillingSwitch({
+  current,
+  selected,
+  onChange,
+  apiKeyAvailable,
+}: {
+  current: AuthMode;
+  selected: AuthMode | null;
+  onChange: (m: AuthMode | null) => void;
+  apiKeyAvailable: boolean;
+}) {
+  const effective = selected ?? current;
+  const modes: { id: AuthMode; label: string }[] = [
+    { id: "subscription", label: "subscription" },
+    { id: "api", label: "API key" },
+  ];
+  return (
+    <section className="card card-billing-switch">
+      <div className="billing-switch-head">
+        <span className="billing-switch-eyebrow">Billing for remaining work</span>
+        <InfoBadge label="About switching billing" placement="bottom">
+          Changes how <strong>future</strong> tokens are billed when you resume or retry. Work
+          already done stays attributed to the mode it ran under — the run header shows the split.
+          Switching to <code>API key</code> requires a key set in the auth card.
+        </InfoBadge>
+      </div>
+      <div className="billing-switch-options">
+        {modes.map((m) => {
+          const isCurrent = m.id === current;
+          const isSelected = m.id === effective;
+          const disabled = m.id === "api" && !apiKeyAvailable && current !== "api";
+          return (
+            <button
+              key={m.id}
+              className={`billing-opt${isSelected ? " billing-opt-on" : ""}`}
+              aria-pressed={isSelected}
+              disabled={disabled}
+              title={
+                disabled ? "No API key available — set one in the auth card first" : undefined
+              }
+              // Re-selecting the run's current mode means "no switch" (null).
+              onClick={() => onChange(m.id === current ? null : m.id)}
+            >
+              {m.label}
+              {isCurrent && <span className="billing-opt-tag">current</span>}
+              {isSelected && !isCurrent && <span className="billing-opt-tag">→ switch</span>}
+            </button>
+          );
+        })}
+      </div>
+      {selected && selected !== current && (
+        <p className="billing-switch-note">
+          Resume/retry will bill remaining work to <strong>{selected}</strong>. Already-spent tokens
+          stay on <strong>{current}</strong>.
+        </p>
+      )}
+    </section>
+  );
+}
+
 function formatUsd(n: number): string {
   if (n === 0) return "$0.00";
   // Sub-cent runs would all read "$0.00" at 2dp, so widen precision below a cent.
@@ -1043,6 +1128,21 @@ function ModelBreakdown({ models, showCost }: { models: [string, ModelCost][]; s
   );
 }
 
+/** Shown when a run was billed under more than one auth mode (i.e. switched). */
+function AuthBreakdown({ byAuthMode }: { byAuthMode: Record<string, { tokensUsed: number; costUsd: number }> }) {
+  const rows = Object.entries(byAuthMode).sort((a, b) => b[1].tokensUsed - a[1].tokensUsed);
+  return (
+    <ul className="spend-breakdown">
+      {rows.map(([mode, s]) => (
+        <li key={mode}>
+          <strong>{mode}</strong> — {s.tokensUsed.toLocaleString()} tok ·{" "}
+          {mode === "api" ? `${formatUsd(s.costUsd)} billed` : "no per-run charge"}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 /**
  * Run spend. Cost comes from the SDK (priced per model), so it is exact, not an
  * estimate. The label is honest about what the number means per auth mode:
@@ -1055,6 +1155,18 @@ function SpendReadout({ budget, authMode }: { budget: BudgetState; authMode: Aut
   const cost = budget.costUsd ?? 0;
   const isApi = authMode === "api";
   const models = Object.entries(budget.byModel ?? {}).sort((a, b) => b[1].costUsd - a[1].costUsd);
+  const byAuthMode = budget.byAuthMode ?? {};
+  const switched = Object.keys(byAuthMode).length > 1;
+
+  // Shared breakdown body: auth split first (only when the run was billed under
+  // more than one mode), then the per-model split.
+  const breakdown = (showModelCost: boolean) => (
+    <>
+      {switched && <AuthBreakdown byAuthMode={byAuthMode} />}
+      {models.length > 0 && <ModelBreakdown models={models} showCost={showModelCost} />}
+    </>
+  );
+  const hasBreakdown = switched || models.length > 0;
 
   if (!isApi && cost === 0) {
     return (
@@ -1063,9 +1175,9 @@ function SpendReadout({ budget, authMode }: { budget: BudgetState; authMode: Aut
         title="Subscription bills a flat monthly fee, not per run. The SDK reported no per-run dollar cost."
       >
         subscription · no per-run charge
-        {models.length > 0 && (
-          <InfoBadge label="Token usage by model" placement="bottom">
-            <ModelBreakdown models={models} showCost={false} />
+        {hasBreakdown && (
+          <InfoBadge label="Spend breakdown" placement="bottom">
+            {breakdown(false)}
           </InfoBadge>
         )}
       </span>
@@ -1082,9 +1194,9 @@ function SpendReadout({ budget, authMode }: { budget: BudgetState; authMode: Aut
       }
     >
       {formatUsd(cost)} <span className="run-header-spend-label">{isApi ? "billed" : "≈ equiv"}</span>
-      {models.length > 0 && (
-        <InfoBadge label="Cost by model" placement="bottom">
-          <ModelBreakdown models={models} showCost />
+      {hasBreakdown && (
+        <InfoBadge label="Spend breakdown" placement="bottom">
+          {breakdown(true)}
         </InfoBadge>
       )}
     </span>

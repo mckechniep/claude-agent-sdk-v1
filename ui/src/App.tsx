@@ -499,7 +499,11 @@ export default function App({ refine }: { refine?: RefineParams } = {}) {
                       </button>
                       <span className={`pill pill-${r.status}`}>{r.status}</span>
                       <span className="run-meta">
-                        {r.repoCount} repo{r.repoCount === 1 ? "" : "s"} · {r.tokensUsed.toLocaleString()} tok · {r.authMode}
+                        <span>
+                          {r.repoCount} repo{r.repoCount === 1 ? "" : "s"}
+                        </span>
+                        <span>{r.tokensUsed.toLocaleString()} tok</span>
+                        <span>{r.authMode}</span>
                       </span>
                     </li>
                   ))}

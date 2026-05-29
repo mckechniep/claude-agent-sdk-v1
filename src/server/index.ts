@@ -172,7 +172,8 @@ async function route(req: IncomingMessage, res: ServerResponse, deps: ServerDeps
         return send(res, await handleGetRepoArtifacts(runId, url.searchParams));
       }
       if (method === "POST" && action === "resume") {
-        return send(res, await handleResumeRun(runId, deps));
+        const body = await readJsonBody(req);
+        return send(res, await handleResumeRun(runId, deps, body));
       }
       if (method === "POST" && action === "stop") {
         const body = await readJsonBody(req);
@@ -182,7 +183,8 @@ async function route(req: IncomingMessage, res: ServerResponse, deps: ServerDeps
         return send(res, await handleRecoverRun(runId));
       }
       if (method === "POST" && action === "retry-from-failure") {
-        return send(res, await handleRetryFromFailure(runId, deps));
+        const body = await readJsonBody(req);
+        return send(res, await handleRetryFromFailure(runId, deps, body));
       }
     }
 

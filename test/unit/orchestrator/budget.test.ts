@@ -72,4 +72,29 @@ describe("BudgetTracker", () => {
       costUsd: 0.9,
     });
   });
+
+  it("attributes tokens and cost to the auth mode in effect", () => {
+    const t = new BudgetTracker({});
+    // First leg billed to subscription (cost typically 0 / not charged).
+    t.authMode = "subscription";
+    t.add(295_214);
+    t.addCost(0);
+    // Switch to api for the remainder.
+    t.authMode = "api";
+    t.add(120_000);
+    t.addCost(1.4);
+
+    expect(t.tokensUsed).toBe(415_214);
+    expect(t.costUsd).toBeCloseTo(1.4, 10);
+    expect(t.byAuthMode["subscription"]).toEqual({ tokensUsed: 295_214, costUsd: 0 });
+    expect(t.byAuthMode["api"]).toEqual({ tokensUsed: 120_000, costUsd: 1.4 });
+  });
+
+  it("does not bucket by auth mode until one is set", () => {
+    const t = new BudgetTracker({});
+    t.add(500);
+    t.addCost(0.05);
+    expect(t.byAuthMode).toEqual({});
+    expect(t.tokensUsed).toBe(500);
+  });
 });
