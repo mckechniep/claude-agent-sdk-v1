@@ -53,6 +53,43 @@ describe("runQuery", () => {
     expect(tracker.byModel["claude-opus-4-8"]?.inputTokens).toBe(100);
   });
 
+  it("counts cumulative tokens from modelUsage, not the final-turn top-level usage", async () => {
+    // Simulates a multi-turn agentic task: the result message's top-level
+    // `usage` reports only the final turn (small), while modelUsage is the
+    // cumulative session total (large). tokensUsed must reflect the cumulative
+    // figure so it reconciles with cost / the per-model breakdown.
+    const fakeQuery = vi.fn(async function* () {
+      yield {
+        type: "result",
+        result: "done",
+        usage: { input_tokens: 311, output_tokens: 2000 }, // final turn only
+        total_cost_usd: 5.62,
+        modelUsage: {
+          "claude-haiku-4-5-20251001": {
+            inputTokens: 700_000,
+            outputTokens: 25_504,
+            costUSD: 5.62,
+          },
+        },
+      };
+    });
+    const tracker = new BudgetTracker({});
+    tracker.authMode = "api";
+    const result = await runQuery({
+      prompt: "p",
+      allowedTools: ["Read"],
+      cwd: "/tmp",
+      tracker,
+      queryFn: fakeQuery as never,
+    });
+    // 700000 + 25504 = 725504 — the per-model total, not 311 + 2000.
+    expect(result.tokensUsed).toBe(725_504);
+    expect(tracker.tokensUsed).toBe(725_504);
+    // The per-auth tally now matches the per-model total (both ~725k), and cost
+    // matches too — no more 10x divergence.
+    expect(tracker.byAuthMode["api"]!.tokensUsed).toBe(725_504);
+  });
+
   it("defaults cost to 0 and modelUsage to empty when the SDK omits them (e.g. subscription)", async () => {
     const fakeQuery = vi.fn(async function* () {
       yield { type: "result", result: "ok", usage: { input_tokens: 10, output_tokens: 10 } };

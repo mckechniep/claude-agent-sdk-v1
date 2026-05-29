@@ -144,7 +144,19 @@ export async function* runQueryStream(
     params.abortSignal?.removeEventListener("abort", onAbort);
   }
 
-  const tokensUsed = inputTokens + outputTokens;
+  // Token count: prefer the SDK's per-model tally (`modelUsage`), which is
+  // CUMULATIVE across every turn of the agentic session. The result message's
+  // top-level `usage` reflects only the final turn, so for a multi-turn task
+  // (execute reads/edits/bashes many times) it undercounts dramatically — that's
+  // why the per-model readout (modelUsage) and the per-auth/headline readout
+  // (which used `usage`) disagreed ~10x for the same cost. Summing modelUsage
+  // makes tokens reconcile with cost. Fall back to `usage` if modelUsage is
+  // absent (older SDK / some subscription responses).
+  const modelTokens = Object.values(modelUsage).reduce(
+    (n, m) => n + (m.inputTokens ?? 0) + (m.outputTokens ?? 0),
+    0,
+  );
+  const tokensUsed = modelTokens > 0 ? modelTokens : inputTokens + outputTokens;
   params.tracker.add(tokensUsed);
   // Cost + per-model usage come straight from the SDK's result message — the
   // SDK prices each model, so mixed-tier runs are attributed correctly.
