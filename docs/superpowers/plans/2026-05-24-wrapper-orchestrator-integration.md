@@ -176,7 +176,7 @@ Loop body: `while !aborted && manifest.status not in terminal → step(...) → 
 - Exit codes match `runCommand`: 0=completed, 2=paused-again, 5=failed
 - Test: not adding new tests; manual smoke against a fixture paused run
 
-### Phase F — End-to-end validation (1 task, ~1-2h)
+### Phase F — End-to-end validation + dashboard polish (2 tasks, ~2-3h)
 
 **Task F1: Manual e2e against a small repo**
 - Pick a tiny throwaway repo
@@ -184,6 +184,16 @@ Loop body: `while !aborted && manifest.status not in terminal → step(...) → 
 - Verify each phase progresses, decision gates surface in UI, execute streams live, completion summary renders
 - Then test a yolo run with the same repo
 - Then test resume: pause mid-execute, hit Resume, verify it continues
+
+**Task F2: Dashboard layout — relocate "Raw events" into the status header card**
+- The run-status / `DashboardHeader` card (status legend + `loop / liveness / budget /
+  autonomy / tier` meta rows + Stop button) has a large block of vertical dead space
+  beneath its content; the `LogTail` "Raw events" card sits separately lower down.
+- Move `LogTail` to render underneath the status content + Stop button, inside the same
+  card region — two stacked sub-sections of one card — so the dead space is used.
+- Files: `DashboardHeader` + `LogTail` in `ui/src/RunDashboard.tsx`; adjust
+  `.card-run-header` / `.card-log-tail` CSS so they read as one card. Mind the existing
+  meta-row tooltips/InfoBadges. (See [[project_ui_backlog]].)
 
 ## Open implementation questions
 

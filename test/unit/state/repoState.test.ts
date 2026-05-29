@@ -133,4 +133,24 @@ describe("repoState", () => {
     await writeFile(join(repo, ".agent", "state.json"), "{not valid json");
     await expect(loadRepoState(repo)).rejects.toThrow(/JSON parse failed/);
   });
+
+  it("invalidates the plan + plan-approval when a new proposal is written", async () => {
+    // First full cycle: proposal → plan → plan approved.
+    await writeProposal(repo, "# proposal v1");
+    const planPath = await writePlan(repo, "# plan v1");
+    await writePlanApproval(repo, planPath, 3);
+    expect(await readPlan(repo)).toBe("# plan v1");
+    expect(await readPlanApproval(repo)).not.toBeNull();
+
+    // Re-analyze writes a new proposal — the stale plan + approval must go, so a
+    // later resume can't execute a plan built against the superseded proposal.
+    await writeProposal(repo, "# proposal v2");
+    expect(await readPlan(repo)).toBeNull();
+    expect(await readPlanApproval(repo)).toBeNull();
+  });
+
+  it("first proposal write is a no-op for plan invalidation (no plan yet)", async () => {
+    await expect(writeProposal(repo, "# proposal")).resolves.toContain("completion-proposal.md");
+    expect(await readPlan(repo)).toBeNull();
+  });
 });

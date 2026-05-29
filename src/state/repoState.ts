@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { RepoEntrySchema, StateCorruption, type RepoEntry } from "../types.js";
 import { writeAtomic, cleanStaleTmpFiles, isErrnoCode } from "./atomicWrite.js";
@@ -40,6 +40,13 @@ export async function writeProposal(repoPath: string, markdown: string): Promise
   const dir = await ensureAgentDir(repoPath);
   const path = join(dir, "completion-proposal.md");
   await writeAtomic(path, markdown);
+  // Writing a (possibly new) proposal invalidates anything downstream that was
+  // built from a prior proposal: the plan and its approval. Without this, a
+  // re-analyze leaves plan.md + plan-approved.json on disk built against the
+  // superseded proposal, and a later resume could execute that stale plan. rm
+  // is idempotent (force), so the first-ever proposal write is a no-op here.
+  await rm(join(dir, "plan.md"), { force: true });
+  await rm(join(dir, "plan-approved.json"), { force: true });
   return path;
 }
 
