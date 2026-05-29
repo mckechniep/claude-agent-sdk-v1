@@ -54,3 +54,4 @@ UI/disk-state gaps that surface once you run → reload → resume. (Source: Pha
 **Phase F** (`docs/superpowers/plans/2026-05-24-wrapper-orchestrator-integration.md`):
 - **F1** — manual e2e against a small repo (user-run).
 - **F2** — dashboard: relocate "Raw events" card into the status header card to use the dead space.
+- **F3** — make the budget/spend readout self-explanatory: label the breakdown "By billing mode" vs "By model" (same total, two slicings), clarify tokens are cumulative + cost is SDK-reported. Copy/labeling only.

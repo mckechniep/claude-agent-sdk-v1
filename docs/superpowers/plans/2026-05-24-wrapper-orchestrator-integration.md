@@ -176,7 +176,7 @@ Loop body: `while !aborted && manifest.status not in terminal → step(...) → 
 - Exit codes match `runCommand`: 0=completed, 2=paused-again, 5=failed
 - Test: not adding new tests; manual smoke against a fixture paused run
 
-### Phase F — End-to-end validation + dashboard polish (2 tasks, ~2-3h)
+### Phase F — End-to-end validation + dashboard polish (3 tasks, ~3-4h)
 
 **Task F1: Manual e2e against a small repo**
 - Pick a tiny throwaway repo
@@ -194,6 +194,24 @@ Loop body: `while !aborted && manifest.status not in terminal → step(...) → 
 - Files: `DashboardHeader` + `LogTail` in `ui/src/RunDashboard.tsx`; adjust
   `.card-run-header` / `.card-log-tail` CSS so they read as one card. Mind the existing
   meta-row tooltips/InfoBadges. (See [[project_ui_backlog]].)
+
+**Task F3: Make the budget/spend readout self-explanatory**
+- Today the "Spend breakdown" popover (`SpendReadout` in `ui/src/RunDashboard.tsx`)
+  stacks two unlabeled lists — a per-auth-mode split and a per-model split — that a
+  user can read as contradictory (e.g. "api · 725,504 tok" and "claude-haiku · 725,504
+  tok" look like two different totals when they're the SAME spend grouped two ways).
+- Add clear section labels and a one-line legend so each number is unambiguous:
+  - Header the auth list **"By billing mode"** and the model list **"By model"**, and
+    state that **both groupings cover the same total run spend, just sliced differently**
+    (auth rows sum to the total; model rows sum to the total).
+  - Clarify the units: token counts are **cumulative for the whole run** (sum of
+    input+output across every turn — fixed in `7cb8c9d`); the dollar figure is the
+    **SDK-reported cost** ("billed" for api = real money, "≈ equiv" for subscription =
+    notional, "no per-run charge" when $0).
+  - Consider labeling the headline pill itself (e.g. `total tokens` / `billed`) so the
+    collapsed view is also clear without opening the popover.
+- Goal: a user glancing at the readout can tell exactly what each number reflects
+  without needing this conversation. Pure labeling/copy + light layout — no math change.
 
 ## Open implementation questions
 
