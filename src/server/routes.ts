@@ -20,9 +20,18 @@ import {
 } from "../state/repoState.js";
 import { detectAuth } from "./authDetect.js";
 import { loadUiConfig, setPreferredAuthMode } from "./config.js";
+import { persistApiKey, clearPersistedApiKey } from "../auth/keyStore.js";
 import { openSseStream } from "./sse.js";
 
 const SetModeBody = z.object({ mode: z.enum(AUTH_MODES).nullable() });
+const SetKeyBody = z.object({
+  // Trim incidental whitespace from copy/paste; require a plausibly-real key
+  // length rather than locking to a provider prefix that could change.
+  key: z.string().transform((s) => s.trim()).pipe(z.string().min(20)),
+  // Default true: the user explicitly asked to persist+encrypt. Pass false to
+  // set the key for this server lifetime only (in-memory).
+  persist: z.boolean().default(true),
+});
 const StreamQuery = z.object({ mode: z.enum(AUTH_MODES) });
 const DiscoverQuery = z.object({
   path: z.string().min(1),
@@ -62,7 +71,15 @@ const ApprovePlanBody = z.object({
 const HEARTBEAT_MS = 750;
 
 export interface ServerDeps {
+  // The current usable API key. Named "original" historically (it was the
+  // startup env snapshot), but it is now the single source of truth that every
+  // auth gate reads live: seeded from env or the encrypted store at startup,
+  // and reassigned by POST/DELETE /api/auth/key at runtime.
   originalApiKey: string | undefined;
+  // Whether a key is saved to the encrypted on-disk store (vs only in env/memory).
+  // Drives the UI's "saved — forget key" affordance. Optional so call sites that
+  // don't exercise persistence (most route tests) need not set it.
+  apiKeyPersisted?: boolean;
 }
 
 export interface RouteResponse {
@@ -86,6 +103,7 @@ export async function handleAuthStatus(deps: ServerDeps): Promise<RouteResponse>
     body: {
       ...detection,
       preferredAuthMode: config.preferredAuthMode,
+      apiKeyPersisted: deps.apiKeyPersisted ?? false,
     },
   };
 }
@@ -97,6 +115,39 @@ export async function handleSetAuthMode(payload: unknown): Promise<RouteResponse
   }
   const config = await setPreferredAuthMode(parsed.data.mode);
   return { status: 200, body: config };
+}
+
+/**
+ * Accept an API key from the UI: apply it to the live environment, update the
+ * shared deps so every auth gate sees it immediately, and (by default) encrypt
+ * it to the machine-bound store so it survives a server restart. The key is
+ * never echoed back or logged.
+ */
+export async function handleSetApiKey(payload: unknown, deps: ServerDeps): Promise<RouteResponse> {
+  const parsed = SetKeyBody.safeParse(payload);
+  if (!parsed.success) {
+    return { status: 400, body: { error: "invalid api key", issues: parsed.error.issues } };
+  }
+  const { key, persist } = parsed.data;
+  if (persist) {
+    await persistApiKey(key);
+  }
+  process.env.ANTHROPIC_API_KEY = key;
+  deps.originalApiKey = key;
+  deps.apiKeyPersisted = persist;
+  return { status: 200, body: { apiKeyDetected: true, apiKeyPersisted: persist } };
+}
+
+/**
+ * Forget the API key: remove it from the encrypted store, the environment, and
+ * the shared deps. Idempotent — clearing when nothing is set is a no-op 200.
+ */
+export async function handleClearApiKey(deps: ServerDeps): Promise<RouteResponse> {
+  await clearPersistedApiKey();
+  delete process.env.ANTHROPIC_API_KEY;
+  deps.originalApiKey = undefined;
+  deps.apiKeyPersisted = false;
+  return { status: 200, body: { apiKeyDetected: false, apiKeyPersisted: false } };
 }
 
 export async function handleListRuns(): Promise<RouteResponse> {

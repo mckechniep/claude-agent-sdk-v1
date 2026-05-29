@@ -10,6 +10,8 @@ import {
   handleListRuns,
   handlePlanStream,
   handleSetAuthMode,
+  handleSetApiKey,
+  handleClearApiKey,
   handleSmokeStream,
   type RouteResponse,
   type ServerDeps,
@@ -28,6 +30,7 @@ import {
   handleSubmitDecisions,
 } from "./runRoutes.js";
 import { sweepCrashedRuns } from "./crashRecovery.js";
+import { readPersistedApiKeySync } from "../auth/keyStore.js";
 import { defaultStateRoot } from "../state/runIndex.js";
 
 const DEFAULT_PORT = 3737;
@@ -102,6 +105,13 @@ async function route(req: IncomingMessage, res: ServerResponse, deps: ServerDeps
     if (method === "POST" && path === "/api/auth/mode") {
       const body = await readJsonBody(req);
       return send(res, await handleSetAuthMode(body));
+    }
+    if (method === "POST" && path === "/api/auth/key") {
+      const body = await readJsonBody(req);
+      return send(res, await handleSetApiKey(body, deps));
+    }
+    if (method === "DELETE" && path === "/api/auth/key") {
+      return send(res, await handleClearApiKey(deps));
     }
     if (method === "GET" && path === "/api/runs") {
       return send(res, await handleListRuns());
@@ -184,8 +194,16 @@ async function route(req: IncomingMessage, res: ServerResponse, deps: ServerDeps
 }
 
 export function startServer(port = DEFAULT_PORT): { close: () => Promise<void>; port: number } {
+  // Seed the API key: an explicit env var wins (matches CLI behavior and lets a
+  // shell override the stored key); otherwise fall back to the encrypted store
+  // so a key saved via the UI survives restarts. Read synchronously so the very
+  // first /api/auth/status already reflects a stored key.
+  const envKey = process.env.ANTHROPIC_API_KEY;
+  const storedKey = envKey ? null : readPersistedApiKeySync();
+  if (storedKey) process.env.ANTHROPIC_API_KEY = storedKey;
   const deps: ServerDeps = {
-    originalApiKey: process.env.ANTHROPIC_API_KEY,
+    originalApiKey: envKey ?? storedKey ?? undefined,
+    apiKeyPersisted: !envKey && storedKey !== null,
   };
 
   // Fire-and-forget recovery sweep — runs concurrently with `listen()`. The

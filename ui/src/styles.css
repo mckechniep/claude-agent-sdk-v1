@@ -348,6 +348,92 @@ pre {
   border-color: var(--err);
 }
 
+.btn-sm {
+  padding: 7px 12px;
+  font-size: 13px;
+}
+
+/* API key entry — lives directly under the API mode row in the auth card. */
+.keybox {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: -2px 0 2px;
+  padding: 12px;
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--r-md);
+  background: var(--bg);
+}
+
+.keybox-active {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  border-style: solid;
+  border-color: var(--line);
+}
+
+.keybox-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--ink-mute);
+}
+
+.keybox-row {
+  display: flex;
+  gap: 8px;
+}
+
+.keybox-input {
+  flex: 1;
+  font: inherit;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  letter-spacing: 0.04em;
+  padding: 8px 11px;
+  color: var(--ink);
+  background: var(--bg-elev);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-sm);
+  transition: border-color var(--t-fast) var(--ease), box-shadow var(--t-fast) var(--ease);
+}
+
+.keybox-input::placeholder {
+  color: var(--ink-faint);
+}
+
+.keybox-input:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.keybox-persist {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12.5px;
+  color: var(--ink-mute);
+  cursor: pointer;
+}
+
+.keybox-persist input {
+  accent-color: var(--accent);
+}
+
+.keybox-note {
+  font-size: 11.5px;
+  line-height: 1.45;
+  font-family: var(--font-mono);
+}
+
+.keybox-err {
+  margin: 0;
+  font-size: 12.5px;
+}
+
 .action-hint {
   font-size: 12.5px;
   color: var(--ink-mute);

@@ -7,6 +7,7 @@ export interface AuthStatus {
   apiKeyDetected: boolean;
   subscriptionDetected: boolean;
   preferredAuthMode: AuthMode | null;
+  apiKeyPersisted?: boolean;
 }
 
 export interface RunSummary {
@@ -190,6 +191,16 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ mode }),
     }).then(json<{ preferredAuthMode: AuthMode | null }>),
+  setApiKey: (key: string, persist = true) =>
+    fetch("/api/auth/key", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ key, persist }),
+    }).then(json<{ apiKeyDetected: boolean; apiKeyPersisted: boolean }>),
+  clearApiKey: () =>
+    fetch("/api/auth/key", { method: "DELETE" }).then(
+      json<{ apiKeyDetected: boolean; apiKeyPersisted: boolean }>,
+    ),
   listRuns: () => fetch("/api/runs").then(json<RunsResponse>),
   approveProposal: (args: { repoPath: string; proposalPath: string }) =>
     fetch("/api/analyze/approve", {

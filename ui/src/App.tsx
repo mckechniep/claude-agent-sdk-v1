@@ -417,10 +417,11 @@ export default function App({ refine }: { refine?: RefineParams } = {}) {
                 label="API key"
                 hint="pay-per-token via ANTHROPIC_API_KEY"
                 available={authState.data.apiKeyDetected}
-                unavailableHint="add ANTHROPIC_API_KEY to .env or your shell and restart the server"
+                unavailableHint="paste a key below — no server restart needed"
                 selected={chosenMode === "api"}
                 onSelect={onSelectMode}
               />
+              <ApiKeyEntry status={authState.data} onChanged={reloadAuth} />
               <ModeRow
                 mode="subscription"
                 label="Claude subscription"
@@ -618,6 +619,107 @@ function reduceSmoke(
       return { phase: "error", message: event.message, messages };
     }
   }
+}
+
+function ApiKeyEntry({ status, onChanged }: { status: AuthStatus; onChanged: () => void }) {
+  const [value, setValue] = useState("");
+  const [persist, setPersist] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const detected = status.apiKeyDetected;
+  const persisted = status.apiKeyPersisted ?? false;
+  const tooShort = value.trim().length < 20;
+
+  const save = async () => {
+    if (tooShort) {
+      setErr("That key looks too short.");
+      return;
+    }
+    setBusy(true);
+    setErr(null);
+    try {
+      await api.setApiKey(value.trim(), persist);
+      setValue(""); // never keep the secret in component state longer than needed
+      onChanged();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "failed to save key");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const forget = async () => {
+    setBusy(true);
+    setErr(null);
+    try {
+      await api.clearApiKey();
+      onChanged();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "failed to forget key");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (detected) {
+    return (
+      <div className="keybox keybox-active">
+        <span className="keybox-state">
+          <span className="dot dot-ok" aria-hidden />
+          {persisted ? "key saved · encrypted on this machine" : "key active · from environment"}
+        </span>
+        {persisted && (
+          <button className="btn btn-ghost btn-sm" onClick={forget} disabled={busy}>
+            {busy ? "…" : "Forget key"}
+          </button>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="keybox keybox-entry">
+      <div className="keybox-row">
+        <input
+          id="api-key-input"
+          type="password"
+          className="keybox-input"
+          placeholder="sk-ant-… paste your key"
+          value={value}
+          autoComplete="off"
+          spellCheck={false}
+          aria-label="Anthropic API key"
+          onChange={(e) => setValue(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") void save();
+          }}
+          disabled={busy}
+        />
+        <button
+          className="btn btn-primary btn-sm"
+          onClick={() => void save()}
+          disabled={busy || tooShort}
+        >
+          {busy ? "saving…" : "Save key"}
+        </button>
+      </div>
+      <label className="keybox-persist">
+        <input
+          type="checkbox"
+          checked={persist}
+          onChange={(e) => setPersist(e.target.checked)}
+          disabled={busy}
+        />
+        remember on this machine (encrypted, survives restart)
+      </label>
+      {err && <p className="err keybox-err">{err}</p>}
+      <p className="muted keybox-note">
+        Encrypted with a key derived from this machine — protects the file if it leaks off this box,
+        not from processes running as you.
+      </p>
+    </div>
+  );
 }
 
 function ModeRow(props: {
