@@ -121,8 +121,24 @@ describe("runOrchestration", () => {
     const TASK1 = "11111111-1111-1111-1111-111111111111";
     const TASK2 = "22222222-2222-2222-2222-222222222222";
     const twoTasks = [
-      { taskId: TASK1, title: "T1", acceptanceCriteria: [], status: "pending" as const, attempts: 0, tokensUsed: 0, durationMs: 0 },
-      { taskId: TASK2, title: "T2", acceptanceCriteria: [], status: "pending" as const, attempts: 0, tokensUsed: 0, durationMs: 0 },
+      {
+        taskId: TASK1,
+        title: "T1",
+        acceptanceCriteria: [],
+        status: "pending" as const,
+        attempts: 0,
+        tokensUsed: 0,
+        durationMs: 0,
+      },
+      {
+        taskId: TASK2,
+        title: "T2",
+        acceptanceCriteria: [],
+        status: "pending" as const,
+        attempts: 0,
+        tokensUsed: 0,
+        durationMs: 0,
+      },
     ];
 
     const fakeAnalyze = vi.fn(async () => ({
