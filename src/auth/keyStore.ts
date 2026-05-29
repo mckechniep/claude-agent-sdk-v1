@@ -75,10 +75,7 @@ export function decryptSecret(blob: EncryptedBlob, machineId: string): string {
   decipher.setAuthTag(tag);
   // .final() throws if the tag doesn't verify — i.e. tampering or a wrong
   // (different-machine) derived key. Callers translate that to "no usable key".
-  const out = Buffer.concat([
-    decipher.update(Buffer.from(blob.data, "base64")),
-    decipher.final(),
-  ]);
+  const out = Buffer.concat([decipher.update(Buffer.from(blob.data, "base64")), decipher.final()]);
   return out.toString("utf8");
 }
 

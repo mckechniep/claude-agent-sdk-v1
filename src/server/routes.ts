@@ -27,7 +27,10 @@ const SetModeBody = z.object({ mode: z.enum(AUTH_MODES).nullable() });
 const SetKeyBody = z.object({
   // Trim incidental whitespace from copy/paste; require a plausibly-real key
   // length rather than locking to a provider prefix that could change.
-  key: z.string().transform((s) => s.trim()).pipe(z.string().min(20)),
+  key: z
+    .string()
+    .transform((s) => s.trim())
+    .pipe(z.string().min(20)),
   // Default true: the user explicitly asked to persist+encrypt. Pass false to
   // set the key for this server lifetime only (in-memory).
   persist: z.boolean().default(true),
