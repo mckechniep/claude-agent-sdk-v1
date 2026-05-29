@@ -255,4 +255,122 @@ describe("step", () => {
       /first call requires/,
     );
   });
+
+  // Regression: a "paused" manifest used to fall through step()'s status
+  // switch unchanged, so /resume and /retry-from-failure started the
+  // background loop only to have it immediately exit with run_loop_paused.
+  // step() must now treat paused as a soft-stop marker and re-enter the
+  // state machine rather than returning the manifest verbatim.
+  it("advances a paused manifest by re-entering the state machine", async () => {
+    const repoPath = await makeFixtureRepo(target, "alpha");
+    const selectedRepos: DiscoveredRepo[] = [
+      {
+        path: repoPath,
+        name: "alpha",
+        stack: "jsts",
+        hasReadme: false,
+        hasTests: false,
+        lastCommitDate: null,
+        isDirty: false,
+      },
+    ];
+
+    const analyzeFn = vi.fn(async () => ({
+      proposalPath: "/dev/null",
+      proposalMarkdown: "",
+      tokensUsed: 100,
+      durationMs: 5,
+    }));
+    const planFn = vi.fn(async () => ({
+      planPath: "/dev/null",
+      planMarkdown: "",
+      taskCount: 1,
+      tasks: [
+        {
+          taskId: "33333333-3333-3333-3333-333333333333",
+          title: "T",
+          acceptanceCriteria: [],
+          status: "pending" as const,
+          attempts: 0,
+          tokensUsed: 0,
+          durationMs: 0,
+        },
+      ],
+      estimatedTokens: 1000,
+      estimatedDurationMs: 60_000,
+      tokensUsed: 200,
+      durationMs: 10,
+    }));
+    const executeFn = vi.fn(async () => ({
+      taskId: "33333333-3333-3333-3333-333333333333",
+      title: "T",
+      acceptanceCriteria: [],
+      status: "completed" as const,
+      attempts: 1,
+      tokensUsed: 500,
+      durationMs: 10,
+      commitSha: "b".repeat(40),
+      filesChanged: ["y.txt"],
+      diff: "",
+    }));
+
+    // First call bootstraps the manifest in preflight; a yolo run drives
+    // straight through to completed in one shot.
+    const runId = ulid();
+    const initial = await step({
+      runId,
+      stateRoot,
+      authMode: "api",
+      config: yoloConfig(target),
+      selectedRepos,
+      analyzeFn,
+      planFn,
+      executeFn,
+    });
+    expect(initial.status).toBe("completed");
+
+    // Simulate the on-disk shape after a stop: rewind one repo back to a
+    // retryable state and flip the manifest status to paused.
+    const runDir = join(stateRoot, runId);
+    const { loadManifest, saveManifest } = await import("../../../src/state/runIndex.js");
+    const paused = await loadManifest(runDir);
+    paused.status = "paused";
+    paused.repos[0]!.status = "executing";
+    paused.repos[0]!.taskState = [
+      {
+        taskId: "33333333-3333-3333-3333-333333333333",
+        title: "T",
+        acceptanceCriteria: [],
+        status: "pending",
+        attempts: 0,
+        tokensUsed: 0,
+        durationMs: 0,
+      },
+    ];
+    await saveManifest(runDir, paused);
+
+    analyzeFn.mockClear();
+    planFn.mockClear();
+    executeFn.mockClear();
+
+    const resumed = await step({
+      runId,
+      stateRoot,
+      analyzeFn,
+      planFn,
+      executeFn,
+    });
+
+    // The whole point: status is no longer paused. The state machine
+    // routed via preflight → awaiting-run-confirmation (marker already on
+    // disk from the yolo run) → running → completed, re-executing the one
+    // pending task.
+    expect(resumed.status).not.toBe("paused");
+    expect(resumed.status).toBe("completed");
+    expect(executeFn).toHaveBeenCalledTimes(1);
+    // Analyze and plan should NOT re-run — the repo was already past
+    // those phases when we paused it.
+    expect(analyzeFn).toHaveBeenCalledTimes(0);
+    expect(planFn).toHaveBeenCalledTimes(0);
+  });
 });

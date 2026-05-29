@@ -393,6 +393,18 @@ export async function step(p: StepParams): Promise<RunManifest> {
 
   try {
     while (true) {
+      if (manifest.status === "paused") {
+        // "paused" is a soft-stop marker written by the loop's settle path
+        // (and by routes like /resume and /retry-from-failure). It isn't a
+        // phase — there's no advance-from-paused work to do. Hand control
+        // back to the preflight dispatcher, which inspects per-repo states
+        // and routes to the correct next phase (awaiting-decision, running,
+        // or completed). Subsequent iterations of this while loop walk the
+        // status forward from there.
+        manifest.status = "preflight";
+        await persist();
+        continue;
+      }
       if (manifest.status === "preflight") {
         const didWork = await advancePreflightOnce(manifest, runDir, tracker, log, p);
         if (!didWork) return manifest;
