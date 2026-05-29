@@ -945,34 +945,75 @@ function RunConfirmationGate({
   const repos = vm.manifest.repos.filter(
     (r) => r.status !== "skipped" && r.status !== "failed",
   );
-  const totalTasks = repos.reduce(
-    (n, r) => n + (r.taskState?.length ?? 0),
-    0,
-  );
+  // Count by task status, not plan length. A task that's already completed or
+  // skipped will NOT be re-run by the executor (run.ts execute loop), so the
+  // honest "what will happen" number is the remaining count, not the total.
+  let done = 0;
+  let remaining = 0;
+  for (const r of repos) {
+    for (const t of r.taskState ?? []) {
+      if (t.status === "completed" || t.status === "skipped") done += 1;
+      else remaining += 1;
+    }
+  }
+  const total = done + remaining;
+  // Prior progress means this is a resume, not a fresh start — make that
+  // unmistakable so a reflexive click can't read as "start over".
+  const isResume = done > 0;
+
   return (
-    <section className="card card-run-gate">
+    <section className={`card card-run-gate${isResume ? " card-run-gate-resume" : ""}`}>
       <div className="run-gate-head">
-        <span className="run-gate-eyebrow">Run preflight complete</span>
-        <h2 className="run-gate-title">Ready to execute</h2>
+        <span className="run-gate-eyebrow">
+          {isResume ? "⟳ Resuming — partial progress detected" : "Run preflight complete"}
+        </span>
+        <h2 className="run-gate-title">{isResume ? "Resume run" : "Ready to execute"}</h2>
       </div>
-      <p className="run-gate-summary">
-        <strong>{repos.length}</strong> repo{repos.length === 1 ? "" : "s"} have
-        approved plans · <strong>{totalTasks}</strong> task
-        {totalTasks === 1 ? "" : "s"} will be executed
-      </p>
+
+      {isResume ? (
+        <p className="run-gate-summary">
+          <strong>{repos.length}</strong> repo{repos.length === 1 ? "" : "s"} ·{" "}
+          <strong>{done}</strong> of {total} task{total === 1 ? "" : "s"} done ·{" "}
+          <strong>{remaining}</strong> remaining will run
+          <br />
+          <span className="run-gate-skip-note">
+            {done} completed task{done === 1 ? "" : "s"} {done === 1 ? "is" : "are"} skipped — not
+            re-run or overwritten
+          </span>
+        </p>
+      ) : (
+        <p className="run-gate-summary">
+          <strong>{repos.length}</strong> repo{repos.length === 1 ? "" : "s"} have approved plans ·{" "}
+          <strong>{remaining}</strong> task{remaining === 1 ? "" : "s"} will be executed
+        </p>
+      )}
+
       <p className="run-gate-detail">
-        Clicking <strong>Confirm &amp; start execution</strong> hands control to the
-        executor. Each task runs against its repo with the configured model tier
-        ({vm.manifest.config.tier}), commits to a per-task branch when tests pass,
-        and reports progress live below.
+        {isResume ? (
+          <>
+            Clicking <strong>Confirm &amp; resume</strong> continues from where this run stopped —
+            it skips the finished tasks and picks up the remaining {remaining} with the configured
+            model tier ({vm.manifest.config.tier}).
+          </>
+        ) : (
+          <>
+            Clicking <strong>Confirm &amp; start execution</strong> hands control to the executor.
+            Each task runs against its repo with the configured model tier (
+            {vm.manifest.config.tier}), commits to a per-task branch when tests pass, and reports
+            progress live below.
+          </>
+        )}
       </p>
+
       <div className="run-gate-actions">
-        <button
-          className="btn btn-primary"
-          onClick={() => void onConfirm()}
-          disabled={submitting}
-        >
-          {submitting ? "starting…" : "Confirm & start execution"}
+        <button className="btn btn-primary" onClick={() => void onConfirm()} disabled={submitting}>
+          {submitting
+            ? isResume
+              ? "resuming…"
+              : "starting…"
+            : isResume
+              ? `Confirm & resume (${remaining} task${remaining === 1 ? "" : "s"})`
+              : "Confirm & start execution"}
         </button>
       </div>
     </section>
