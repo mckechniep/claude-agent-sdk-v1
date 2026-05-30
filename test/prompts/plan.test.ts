@@ -69,7 +69,11 @@ describe("renderPlanPrompt", () => {
       - Acceptance criteria must be verifiable by reading code or running tests, not subjective judgment.
       - Each task should target less than 1 hour of equivalent dev work.
       - Generate fresh UUIDv4 strings for each new task — do NOT reuse IDs across unrelated tasks. When refining a previous plan, preserve the UUID of any task whose intent is unchanged.
-      - The full plan should have between 3 and 30 tasks. Bias toward fewer, larger tasks over many tiny ones.
+      - The full plan should have between 3 and 30 tasks. Prefer fewer, larger tasks for self-contained code changes — but never let a single task require reading large swaths of the repo at once (see the next constraint).
+      - **Budget each task's _reading_ cost, not only its writing cost.** Every task is executed by a *fresh* agent with an empty context window: it must re-read everything it needs from scratch, and the repo keeps growing as earlier tasks land. A task that has to survey many files or the whole API surface in one go will exhaust its context window (autocompact thrashing) and fail without writing anything. Split read-heavy or cross-cutting work by surface area so each task is completable from a bounded slice of the repo:
+        - Documentation: one task per document or area (e.g. separate tasks for the README, the data-model docs, and the admin/API docs) — never a single "write all the docs" task.
+        - Broad test suites: split by module or feature area, not one task that exercises everything at once.
+        - Sweeping refactors or renames: split by package or directory.
       - Tools available to you: \`Read\` only. **You may not edit, create, or commit anything.**
 
       ## Iteration 1 guidance (balanced, mode: normal)
