@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
-import { mkdtemp, writeFile, rm } from "node:fs/promises";
+import { mkdtemp, writeFile, rm, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { simpleGit } from "simple-git";
@@ -92,6 +92,10 @@ describe("execute", () => {
     });
     expect(result.status).toBe("failed");
     expect(result.failureReason).toMatch(/no file changes/i);
+    // The agent's final message is folded into the reason so a hallucinated
+    // completion is debuggable without a transcript.
+    expect(result.failureReason).toMatch(/final message/i);
+    expect(result.failureReason).toContain("claimed done");
     expect(result.attempts).toBe(1);
   });
 
@@ -125,6 +129,11 @@ describe("execute", () => {
     expect(result.attempts).toBe(2);
     expect(fakeQuery).toHaveBeenCalledTimes(2);
     expect(result.filesChanged).toContain("late.txt");
+    // Attempt 2 gets the no-changes nudge (not test-failure prose) and sees
+    // what the agent said on attempt 1.
+    const secondCall = fakeQuery.mock.calls[1] as unknown as [{ prompt: string }];
+    expect(secondCall[0].prompt).toContain("MADE NO FILE CHANGES");
+    expect(secondCall[0].prompt).toContain("I had no idea");
   });
 
   it("uses Read, Write, Edit, Bash allowlist", async () => {
@@ -153,6 +162,49 @@ describe("execute", () => {
       | undefined;
     if (!firstCall) throw new Error("expected fakeQuery to be called");
     expect(firstCall[0].options.allowedTools).toEqual(["Read", "Write", "Edit", "Bash"]);
+  });
+
+  it("writes a per-task transcript (attempt boundaries + sdk messages) when transcriptPath is set", async () => {
+    const fakeQuery = vi.fn(async function* () {
+      await writeFile(join(repo, "b.txt"), "edit");
+      yield {
+        type: "result",
+        result: "done",
+        usage: { input_tokens: 10, output_tokens: 5 },
+      };
+    });
+    // Keep the transcript OUTSIDE the repo — in a real run it lives under
+    // runs/<id>/transcripts, never in the working tree it's recording.
+    const txDir = await mkdtemp(join(tmpdir(), "tx-"));
+    const txFile = join(txDir, "task.jsonl");
+    try {
+      await execute({
+        repoPath: repo,
+        repoName: "x",
+        stackProfile: jstsProfile,
+        task: baseTask,
+        tracker: new BudgetTracker({}),
+        maxRetries: 0,
+        testGateEnabled: false,
+        testCommand: "",
+        testTimeoutMs: 5000,
+        queryFn: fakeQuery as never,
+        transcriptPath: txFile,
+      });
+      const lines = (await readFile(txFile, "utf8"))
+        .trim()
+        .split("\n")
+        .map(
+          (l) => JSON.parse(l) as { type: string; attempt?: number; message?: { result?: string } },
+        );
+      expect(lines.some((l) => l.type === "attempt_started" && l.attempt === 1)).toBe(true);
+      expect(lines.some((l) => l.type === "sdk_message" && l.message?.result === "done")).toBe(
+        true,
+      );
+      expect(lines.some((l) => l.type === "attempt_finished")).toBe(true);
+    } finally {
+      await rm(txDir, { recursive: true, force: true });
+    }
   });
 
   it("test gate failure with no retries marks task failed", async () => {

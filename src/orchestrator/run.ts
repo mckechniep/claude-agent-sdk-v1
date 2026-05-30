@@ -19,6 +19,7 @@ import {
 } from "../state/repoState.js";
 import { createRunDir, loadManifest, saveManifest } from "../state/runIndex.js";
 import { appendLogEvent } from "../state/runLog.js";
+import { transcriptPath } from "../state/transcript.js";
 import {
   BudgetCapped,
   SCHEMA_VERSION,
@@ -301,6 +302,7 @@ async function advanceRunning(
         testTimeoutMs: manifest.config.testTimeoutMs,
         model: manifest.config.model.execute ?? manifest.config.model.default,
         abortSignal: p.abortSignal,
+        transcriptPath: transcriptPath(runDir, task.taskId),
       });
       Object.assign(task, outcome);
       await saveRepoState(repo.path, repo);

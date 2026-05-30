@@ -3,9 +3,16 @@ import type { StackProfile } from "../../stack/profiles/types.js";
 import type { TaskState } from "../../types.js";
 
 export interface ExecuteRetryFeedback {
+  // Why the previous attempt failed. "no-changes" needs a different nudge than
+  // "test-failure": the agent didn't write anything, so framing it as a logic
+  // bug (the test-failure prose) misleads it. See renderRetryBlock.
+  kind: "no-changes" | "test-failure";
   previousFiles: string[];
   testCommand: string;
   testOutput: string;
+  // The agent's final message from the previous attempt — surfaced back so a
+  // hallucinated completion ("I've documented X…" with no Write call) is visible.
+  previousFinalText: string;
   attemptNumber: number;
 }
 
@@ -49,6 +56,13 @@ Stack: **${stackProfile.displayName}** (\`${stackProfile.id}\`). Default test co
 }
 
 function renderRetryBlock(feedback: ExecuteRetryFeedback): string {
+  if (feedback.kind === "no-changes") {
+    const said = feedback.previousFinalText.trim();
+    const saidBlock = said
+      ? `\nYour previous final message was:\n\n\`\`\`\n${said.slice(0, 2048)}\n\`\`\`\n`
+      : "";
+    return `\n## PREVIOUS ATTEMPT MADE NO FILE CHANGES\n\nAttempt #${feedback.attemptNumber} reported completion but the working tree was left unchanged — you described the work but never actually created or edited any files on disk.\n${saidBlock}\nThis time you MUST use the \`Write\`/\`Edit\` tools to make the changes. Do not just summarize what should be done — do it, file by file. If a required file is large, read it in focused chunks rather than all at once so you don't exhaust your context before writing. If something genuinely prevents you from writing, state exactly what and stop — do not claim completion without edits.\n`;
+  }
   return `\n## PREVIOUS ATTEMPT FAILED\n\nAttempt #${feedback.attemptNumber} did not pass. Here's what we have:\n\n- Files modified: ${feedback.previousFiles.join(", ") || "none"}\n- Test command: \`${feedback.testCommand}\`\n- Test output (truncated to 4KB):\n\n\`\`\`\n${feedback.testOutput.slice(0, 4096)}\n\`\`\`\n\nThings to consider:\n- The previous diff is preserved on the current branch as a WIP commit — review it before re-editing.\n- The test failure usually means the logic is wrong, not the structure.\n- If you believe the test itself is wrong, say so explicitly and stop without further edits.\n\nTry again. If you cannot fix it in this attempt, return a clear explanation of what's blocking and don't make further edits.\n`;
 }
 
