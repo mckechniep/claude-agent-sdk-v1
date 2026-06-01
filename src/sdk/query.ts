@@ -6,6 +6,11 @@ export interface QueryParams {
   cwd: string;
   tracker: BudgetTracker;
   model?: string;
+  // Reasoning effort forwarded to the SDK ('low' | 'medium' | 'high' |
+  // 'xhigh' | 'max'). Typed as string to keep the SDK layer decoupled from
+  // types.ts (same convention as `model`). Omitted from the SDK call when
+  // unset so the SDK/model default applies.
+  effort?: string;
   systemPrompt?: string | string[];
   queryFn?: AsyncGeneratorFn;
   // When fired, the in-flight SDK query is cancelled. The generator throws
@@ -110,6 +115,7 @@ export async function* runQueryStream(
       allowedTools: params.allowedTools,
       abortController: sdkController,
       ...(params.model ? { model: params.model } : {}),
+      ...(params.effort ? { effort: params.effort } : {}),
       ...(params.systemPrompt ? { systemPrompt: params.systemPrompt } : {}),
     },
   });

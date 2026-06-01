@@ -124,3 +124,51 @@ describe("runQuery", () => {
     expect(result.durationMs).toBeGreaterThanOrEqual(0);
   });
 });
+
+describe("runQuery effort passthrough", () => {
+  it("forwards effort to the SDK options when set", async () => {
+    let capturedOptions: Record<string, unknown> | undefined;
+    const fakeQuery = vi.fn(async function* (args: unknown) {
+      capturedOptions = (args as { options: Record<string, unknown> }).options;
+      yield {
+        type: "result",
+        result: "ok",
+        usage: { input_tokens: 1, output_tokens: 1 },
+      };
+    });
+    const tracker = new BudgetTracker({});
+    await runQuery({
+      prompt: "test",
+      allowedTools: ["Read"],
+      cwd: "/tmp",
+      tracker,
+      model: "claude-sonnet-4-6",
+      effort: "low",
+      queryFn: fakeQuery as never,
+    });
+    expect(capturedOptions?.effort).toBe("low");
+    expect(capturedOptions?.model).toBe("claude-sonnet-4-6");
+  });
+
+  it("omits the effort key entirely when unset so the SDK default applies", async () => {
+    let capturedOptions: Record<string, unknown> | undefined;
+    const fakeQuery = vi.fn(async function* (args: unknown) {
+      capturedOptions = (args as { options: Record<string, unknown> }).options;
+      yield {
+        type: "result",
+        result: "ok",
+        usage: { input_tokens: 1, output_tokens: 1 },
+      };
+    });
+    const tracker = new BudgetTracker({});
+    await runQuery({
+      prompt: "test",
+      allowedTools: ["Read"],
+      cwd: "/tmp",
+      tracker,
+      queryFn: fakeQuery as never,
+    });
+    expect(capturedOptions).toBeDefined();
+    expect("effort" in (capturedOptions ?? {})).toBe(false);
+  });
+});
