@@ -31,6 +31,7 @@ import {
 } from "../types.js";
 import { BudgetTracker } from "./budget.js";
 import { runWithConcurrency } from "./concurrency.js";
+import { effortFor, modelFor } from "./phaseAgents.js";
 
 const RUN_CONFIRMED_MARKER = "run-confirmed.json";
 
@@ -180,7 +181,8 @@ async function advancePreflightOnce(
       stackProfile: getStackProfile(repo.stack),
       proposalMarkdown: proposalMd,
       tracker,
-      model: manifest.config.model.plan ?? manifest.config.model.default,
+      model: modelFor("plan", manifest.config),
+      effort: effortFor("plan", manifest.config),
       abortSignal: p.abortSignal,
     });
     repo.planPath = planResult.planPath;
@@ -220,7 +222,8 @@ async function advancePreflightOnce(
           hasTests: repo.hasTests ?? false,
           lastCommitDate: repo.lastCommitDate ?? null,
           tracker,
-          model: manifest.config.model.analyze ?? manifest.config.model.default,
+          model: modelFor("analyze", manifest.config),
+          effort: effortFor("analyze", manifest.config),
           abortSignal: p.abortSignal,
         });
         repo.proposalPath = result.proposalPath;
@@ -300,7 +303,8 @@ async function advanceRunning(
         testGateEnabled: repo.testGate,
         testCommand: profile.defaultTestCommand,
         testTimeoutMs: manifest.config.testTimeoutMs,
-        model: manifest.config.model.execute ?? manifest.config.model.default,
+        model: modelFor("execute", manifest.config),
+        effort: effortFor("execute", manifest.config),
         abortSignal: p.abortSignal,
         transcriptPath: transcriptPath(runDir, task.taskId),
       });

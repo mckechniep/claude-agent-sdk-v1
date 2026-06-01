@@ -232,6 +232,85 @@ describe("runOrchestration", () => {
     expect(fakeExecute.mock.calls[0]![0].task.taskId).toBe(TASK2);
   });
 
+  it("threads per-phase model and effort from config into each phase fn", async () => {
+    await makeFixtureRepo(target, "alpha");
+
+    // Identical fakes to the happy-path test above (same return shapes).
+    const fakeAnalyze = vi.fn(async () => ({
+      proposalPath: "/dev/null",
+      proposalMarkdown: "",
+      tokensUsed: 100,
+      durationMs: 10,
+    }));
+    const fakePlan = vi.fn(async () => ({
+      planPath: "/dev/null",
+      planMarkdown: "",
+      taskCount: 1,
+      tasks: [
+        {
+          taskId: "11111111-1111-1111-1111-111111111111",
+          title: "T",
+          acceptanceCriteria: [],
+          status: "pending" as const,
+          attempts: 0,
+          tokensUsed: 0,
+          durationMs: 0,
+        },
+      ],
+      estimatedTokens: 1000,
+      estimatedDurationMs: 60_000,
+      tokensUsed: 200,
+      durationMs: 10,
+    }));
+    const fakeExecute = vi.fn(async () => ({
+      taskId: "11111111-1111-1111-1111-111111111111",
+      title: "T",
+      acceptanceCriteria: [],
+      status: "completed" as const,
+      attempts: 1,
+      tokensUsed: 500,
+      durationMs: 10,
+      commitSha: "a".repeat(40),
+      filesChanged: ["x.txt"],
+      diff: "",
+    }));
+
+    const config = {
+      ...baseConfig(target),
+      model: {
+        default: "claude-sonnet-4-6" as const,
+        execute: "claude-haiku-4-5-20251001" as const,
+      },
+      effort: { default: "high" as const, execute: "low" as const },
+    };
+
+    const result = await runOrchestration({
+      runId: ulid(),
+      authMode: "api",
+      config,
+      stateRoot,
+      selectRepos: async (repos) => repos.map((r) => r.path),
+      proposalGate: async () => "accept",
+      planGate: async () => "accept",
+      runConfirmation: async () => true,
+      authConfirmation: async () => true,
+      analyzeFn: fakeAnalyze,
+      planFn: fakePlan,
+      executeFn: fakeExecute,
+    });
+
+    expect(result.status).toBe("completed");
+    expect(fakeAnalyze).toHaveBeenCalledWith(
+      expect.objectContaining({ model: "claude-sonnet-4-6", effort: "high" }),
+    );
+    expect(fakePlan).toHaveBeenCalledWith(
+      expect.objectContaining({ model: "claude-sonnet-4-6", effort: "high" }),
+    );
+    expect(fakeExecute).toHaveBeenCalledWith(
+      expect.objectContaining({ model: "claude-haiku-4-5-20251001", effort: "low" }),
+    );
+  });
+
   it("switchRunAuthMode freezes prior spend under the old mode before flipping", async () => {
     await makeFixtureRepo(target, "alpha");
     const noop = vi.fn(async () => ({
