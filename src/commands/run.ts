@@ -3,8 +3,8 @@ import { runOrchestration } from "../orchestrator/run.js";
 import { defaultStateRoot } from "../state/runIndex.js";
 import { selectRepos as selectReposTui } from "../tui/select.js";
 import { confirmPrompt, proposalGate, planGate } from "../tui/confirm.js";
-import { ModelIdSchema, RunConfigSchema } from "../types.js";
-import type { AuthMode, RunConfig } from "../types.js";
+import { EffortLevelSchema, ModelIdSchema, RunConfigSchema } from "../types.js";
+import type { AuthMode, EffortLevel, ModelId, RunConfig } from "../types.js";
 
 export interface RunCommandOpts {
   target: string;
@@ -19,6 +19,10 @@ export interface RunCommandOpts {
   testGate: RunConfig["testGate"];
   testTimeout: string;
   model: string;
+  analyzeModel?: string;
+  planModel?: string;
+  executeModel?: string;
+  effort?: string;
   include?: string[];
   exclude?: string[];
   nonInteractive?: boolean;
@@ -47,6 +51,33 @@ export async function runCommand(opts: RunCommandOpts): Promise<void> {
     process.exit(4);
   }
 
+  const parsePhaseModel = (flag: string, value: string | undefined): ModelId | undefined => {
+    if (value === undefined) return undefined;
+    const parsed = ModelIdSchema.safeParse(value);
+    if (!parsed.success) {
+      console.error(
+        `Invalid ${flag} "${value}". Allowed values: ${ModelIdSchema.options.join(", ")}`,
+      );
+      process.exit(4);
+    }
+    return parsed.data;
+  };
+  const analyzeModel = parsePhaseModel("--analyze-model", opts.analyzeModel);
+  const planModel = parsePhaseModel("--plan-model", opts.planModel);
+  const executeModel = parsePhaseModel("--execute-model", opts.executeModel);
+
+  let effortDefault: EffortLevel | undefined;
+  if (opts.effort !== undefined) {
+    const effortParse = EffortLevelSchema.safeParse(opts.effort);
+    if (!effortParse.success) {
+      console.error(
+        `Invalid --effort "${opts.effort}". Allowed values: ${EffortLevelSchema.options.join(", ")}`,
+      );
+      process.exit(4);
+    }
+    effortDefault = effortParse.data;
+  }
+
   const configParse = RunConfigSchema.safeParse({
     targetDir: opts.target,
     concurrency: Number(opts.concurrency),
@@ -57,7 +88,13 @@ export async function runCommand(opts: RunCommandOpts): Promise<void> {
     maxDurationMs: opts.maxDuration ? parseDuration(opts.maxDuration) : undefined,
     testGate: opts.testGate,
     testTimeoutMs: parseDuration(opts.testTimeout),
-    model: { default: modelParse.data },
+    model: {
+      default: modelParse.data,
+      analyze: analyzeModel,
+      plan: planModel,
+      execute: executeModel,
+    },
+    effort: effortDefault ? { default: effortDefault } : undefined,
     include: opts.include,
     exclude: opts.exclude,
   });
