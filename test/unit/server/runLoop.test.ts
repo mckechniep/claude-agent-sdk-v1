@@ -27,7 +27,6 @@ function makeManifest(status: RunStatus, repoStatus: RepoStatus = "pending"): Ru
     config: {
       targetDir: "/x",
       autonomy: "supervised",
-      tier: "balanced",
       concurrency: 1,
       checkpointEvery: 1,
       onFailure: "skip-repo",

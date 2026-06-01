@@ -33,12 +33,17 @@ export const STACK_IDS = ["jsts", "python", "generic"] as const;
 export const ON_FAILURE_VALUES = ["stop", "skip-task", "skip-repo", "retry"] as const;
 export const TEST_GATE_VALUES = ["required", "skip", "per-repo"] as const;
 export const AUTONOMY_MODES = ["manual", "supervised", "yolo"] as const;
-export const MODEL_TIERS = ["thorough", "balanced", "fast", "custom"] as const;
 export const MODEL_IDS = [
   "claude-sonnet-4-6",
   "claude-haiku-4-5-20251001",
   "claude-opus-4-7",
+  "claude-opus-4-8",
 ] as const;
+// Reasoning effort forwarded to the SDK. 'xhigh'/'max' are Opus-only at the
+// API level; the schema accepts them everywhere and the SDK errors loudly if
+// a model doesn't support the requested level (preferable to silently
+// downgrading). v0.2: validate per-model from the SDK's supportedEffortLevels.
+export const EFFORT_LEVELS = ["low", "medium", "high", "xhigh", "max"] as const;
 
 export type AuthMode = (typeof AUTH_MODES)[number];
 
@@ -58,16 +63,17 @@ export type TestGate = (typeof TEST_GATE_VALUES)[number];
 
 export type AutonomyMode = (typeof AUTONOMY_MODES)[number];
 
-export type ModelTier = (typeof MODEL_TIERS)[number];
+export type EffortLevel = (typeof EFFORT_LEVELS)[number];
 
 export type ModelId = (typeof MODEL_IDS)[number];
 
 export const ModelIdSchema = z.enum(MODEL_IDS);
 
+export const EffortLevelSchema = z.enum(EFFORT_LEVELS);
+
 export const RunConfigSchema = z.object({
   targetDir: z.string(),
   autonomy: z.enum(AUTONOMY_MODES).default("supervised"),
-  tier: z.enum(MODEL_TIERS).default("balanced"),
   concurrency: z.number().int().positive(),
   checkpointEvery: z.number(),
   onFailure: z.enum(ON_FAILURE_VALUES),
@@ -82,6 +88,17 @@ export const RunConfigSchema = z.object({
     plan: ModelIdSchema.optional(),
     execute: ModelIdSchema.optional(),
   }),
+  // Per-phase reasoning effort. Optional at every level: an unset phase falls
+  // back to effort.default; an unset default means "let the SDK/model decide"
+  // (the effort key is omitted from the SDK call entirely).
+  effort: z
+    .object({
+      default: EffortLevelSchema.optional(),
+      analyze: EffortLevelSchema.optional(),
+      plan: EffortLevelSchema.optional(),
+      execute: EffortLevelSchema.optional(),
+    })
+    .optional(),
   include: z.array(z.string()).optional(),
   exclude: z.array(z.string()).optional(),
 });

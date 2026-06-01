@@ -13,28 +13,28 @@ const minimalInput = {
 };
 
 describe("RunConfigSchema", () => {
-  it("applies autonomy=supervised and tier=balanced as defaults", () => {
+  it("applies autonomy=supervised as the default", () => {
     const parsed = RunConfigSchema.parse(minimalInput);
     expect(parsed.autonomy).toBe("supervised");
-    expect(parsed.tier).toBe("balanced");
   });
 
-  it("preserves explicit autonomy and tier choices", () => {
+  it("preserves explicit autonomy choices", () => {
     const parsed = RunConfigSchema.parse({
       ...minimalInput,
       autonomy: "yolo",
-      tier: "fast",
     });
     expect(parsed.autonomy).toBe("yolo");
-    expect(parsed.tier).toBe("fast");
   });
 
   it("rejects invalid autonomy values", () => {
     expect(() => RunConfigSchema.parse({ ...minimalInput, autonomy: "auto" })).toThrow();
   });
 
-  it("rejects invalid tier values", () => {
-    expect(() => RunConfigSchema.parse({ ...minimalInput, tier: "ludicrous" })).toThrow();
+  it("strips the legacy tier field from old configs instead of rejecting them", () => {
+    // Pre-2026-06 manifests carry config.tier. Zod strip mode drops unknown
+    // keys, so old runs stay loadable without a migration.
+    const parsed = RunConfigSchema.parse({ ...minimalInput, tier: "balanced" });
+    expect("tier" in parsed).toBe(false);
   });
 
   it("rejects unknown model IDs", () => {
@@ -43,11 +43,12 @@ describe("RunConfigSchema", () => {
     ).toThrow();
   });
 
-  it("accepts all v0.1 allowlisted model IDs as model.default", () => {
+  it("accepts all allowlisted model IDs as model.default", () => {
     for (const id of [
       "claude-sonnet-4-6",
       "claude-haiku-4-5-20251001",
       "claude-opus-4-7",
+      "claude-opus-4-8",
     ] as const) {
       const parsed = RunConfigSchema.parse({ ...minimalInput, model: { default: id } });
       expect(parsed.model.default).toBe(id);
@@ -60,6 +61,34 @@ describe("RunConfigSchema", () => {
         ...minimalInput,
         model: { default: "claude-sonnet-4-6", execute: "claude-opus-3" },
       }),
+    ).toThrow();
+  });
+
+  it("leaves effort undefined when not provided", () => {
+    const parsed = RunConfigSchema.parse(minimalInput);
+    expect(parsed.effort).toBeUndefined();
+  });
+
+  it("accepts per-phase effort levels", () => {
+    const parsed = RunConfigSchema.parse({
+      ...minimalInput,
+      effort: { default: "high", execute: "low" },
+    });
+    expect(parsed.effort?.default).toBe("high");
+    expect(parsed.effort?.execute).toBe("low");
+    expect(parsed.effort?.analyze).toBeUndefined();
+  });
+
+  it("accepts the full effort range including opus-only levels", () => {
+    for (const level of ["low", "medium", "high", "xhigh", "max"] as const) {
+      const parsed = RunConfigSchema.parse({ ...minimalInput, effort: { default: level } });
+      expect(parsed.effort?.default).toBe(level);
+    }
+  });
+
+  it("rejects unknown effort levels", () => {
+    expect(() =>
+      RunConfigSchema.parse({ ...minimalInput, effort: { default: "ultra" } }),
     ).toThrow();
   });
 });

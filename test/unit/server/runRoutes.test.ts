@@ -35,7 +35,6 @@ function makeManifest(status: RunStatus): RunManifest {
     config: {
       targetDir: "/x",
       autonomy: "manual",
-      tier: "balanced",
       concurrency: 1,
       checkpointEvery: 1,
       onFailure: "skip-repo",
