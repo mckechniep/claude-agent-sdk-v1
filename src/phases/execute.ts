@@ -13,10 +13,11 @@ import {
 import { appendTranscript, ensureTranscriptDir } from "../state/transcript.js";
 import type { StackProfile } from "../stack/profiles/types.js";
 import type { TaskState } from "../types.js";
+import { PHASE_AGENTS } from "../orchestrator/phaseAgents.js";
 
 // Executor needs Write to create new source files (Edit alone requires the
 // file to already exist). Plan tasks often introduce new modules.
-const EXECUTOR_TOOLS = ["Read", "Write", "Edit", "Bash"];
+const EXECUTOR_TOOLS = PHASE_AGENTS.execute.tools;
 
 export interface ExecuteParams {
   repoPath: string;
@@ -29,6 +30,7 @@ export interface ExecuteParams {
   testCommand: string;
   testTimeoutMs: number;
   model?: string;
+  effort?: string;
   queryFn?: Parameters<typeof runQuery>[0]["queryFn"];
   abortSignal?: AbortSignal;
   // When set, every SDK message (plus per-attempt boundaries) is appended here
@@ -105,6 +107,7 @@ export async function* executeStream(
       cwd: params.repoPath,
       tracker: params.tracker,
       model: params.model,
+      effort: params.effort,
       queryFn: params.queryFn,
       abortSignal: params.abortSignal,
     });

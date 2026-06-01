@@ -6,6 +6,7 @@ import { readPlan, writePlan } from "../state/repoState.js";
 import { parsePlan } from "../lib/planParser.js";
 import type { StackProfile } from "../stack/profiles/types.js";
 import type { TaskState } from "../types.js";
+import { PHASE_AGENTS } from "../orchestrator/phaseAgents.js";
 
 const AVG_TOKENS_PER_EXECUTE = 30_000;
 const AVG_DURATION_MS_PER_EXECUTE = 60_000;
@@ -20,6 +21,7 @@ export interface PlanParams {
   iteration?: number;
   thoroughness?: Thoroughness;
   model?: string;
+  effort?: string;
   queryFn?: Parameters<typeof runQuery>[0]["queryFn"];
   abortSignal?: AbortSignal;
 }
@@ -54,10 +56,11 @@ export async function* planStream(params: PlanParams): AsyncGenerator<QueryEvent
 
   const gen = runQueryStream({
     prompt,
-    allowedTools: ["Read"],
+    allowedTools: PHASE_AGENTS.plan.tools,
     cwd: params.repoPath,
     tracker: params.tracker,
     model: params.model,
+    effort: params.effort,
     queryFn: params.queryFn,
     abortSignal: params.abortSignal,
   });

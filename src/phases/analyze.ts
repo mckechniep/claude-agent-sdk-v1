@@ -4,6 +4,7 @@ import { renderAnalyzePrompt } from "../sdk/prompts/analyze.js";
 import type { Thoroughness } from "../sdk/prompts/iteration.js";
 import { readProposal, writeProposal } from "../state/repoState.js";
 import type { StackProfile } from "../stack/profiles/types.js";
+import { PHASE_AGENTS } from "../orchestrator/phaseAgents.js";
 
 export interface AnalyzeParams {
   repoPath: string;
@@ -17,6 +18,7 @@ export interface AnalyzeParams {
   iteration?: number;
   thoroughness?: Thoroughness;
   model?: string;
+  effort?: string;
   queryFn?: Parameters<typeof runQuery>[0]["queryFn"];
   abortSignal?: AbortSignal;
 }
@@ -51,10 +53,11 @@ export async function* analyzeStream(
 
   const gen = runQueryStream({
     prompt,
-    allowedTools: ["Read", "Bash"],
+    allowedTools: PHASE_AGENTS.analyze.tools,
     cwd: params.repoPath,
     tracker: params.tracker,
     model: params.model,
+    effort: params.effort,
     queryFn: params.queryFn,
     abortSignal: params.abortSignal,
   });
