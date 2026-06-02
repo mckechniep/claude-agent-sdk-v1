@@ -1140,10 +1140,20 @@ function RunConfirmationGate({
             </option>
           ))}
         </select>
+        {configEffort !== undefined && executeEffort === "default" && (
+          <span className="gate-model-note">
+            this run&apos;s effort stays &quot;{configEffort}&quot; — explicit effort can&apos;t
+            be unset from this gate
+          </span>
+        )}
       </div>
-      {executeModel !== configModel && (
+      {(executeModel !== configModel || (executeEffort !== "default" && executeEffort !== configEffort)) && (
         <p className="gate-model-note">
-          Sets this run&apos;s execute model — applies to all repos that haven&apos;t started yet.
+          {executeModel !== configModel && executeEffort !== "default" && executeEffort !== configEffort
+            ? "Sets this run's execute model and effort — applies to all repos' remaining execute work."
+            : executeModel !== configModel
+            ? "Sets this run's execute model — applies to all repos that haven't started yet."
+            : "Sets this run's execute effort — applies to all repos' remaining execute work."}
         </p>
       )}
 

@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { api, type ConfigPatch } from "./api";
 import { navigate } from "./router";
 import { InfoBadge } from "./InfoBadge";
-import { MODEL_OPTIONS, effortOptionsFor, type EffortChoice } from "./modelConfig";
+import { MODEL_OPTIONS } from "./modelConfig";
 import type {
   AutonomyMode,
   ModelId,
@@ -273,9 +273,6 @@ function ApprovalGate({
 
   const reAction = kind === "proposal" ? "reanalyze" : "replan";
   const reLabel = kind === "proposal" ? "Re-analyze" : "Re-plan";
-  // Gate effort options to what the selected model supports
-  const effortOpts: EffortChoice[] = effortOptionsFor(selectedModel);
-  void effortOpts; // available if we add effort picker later
 
   return (
     <div className="repo-card-gate">

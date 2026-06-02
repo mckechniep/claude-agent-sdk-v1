@@ -100,4 +100,13 @@ describe("selectionSummary", () => {
     const withEffort = { ...sel, execute: { ...sel.execute, effort: "low" as const } };
     expect(selectionSummary(withEffort)).toBe("sonnet 4.6 / sonnet 4.6 / haiku 4.5 (low)");
   });
+
+  it("collapses to all-phases when models AND efforts are uniformly the same", () => {
+    const uniform = {
+      analyze: { model: "claude-sonnet-4-6" as const, effort: "low" as const },
+      plan: { model: "claude-sonnet-4-6" as const, effort: "low" as const },
+      execute: { model: "claude-sonnet-4-6" as const, effort: "low" as const },
+    };
+    expect(selectionSummary(uniform)).toBe("sonnet 4.6 (low) · all phases");
+  });
 });
