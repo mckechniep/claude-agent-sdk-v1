@@ -162,7 +162,7 @@ export const BudgetStateSchema = z.object({
   // subscription mode it is the notional API-equivalent (or 0 if the SDK does
   // not price subscription runs) — the UI labels it accordingly.
   costUsd: z.number().nonnegative().optional(),
-  // Per-model breakdown so mixed-tier runs (e.g. haiku analyze + opus execute)
+  // Per-model breakdown so mixed-model runs (e.g. haiku analyze + opus execute)
   // show where the cost actually went, rather than one blended number.
   byModel: z.record(z.string(), ModelCostSchema).optional(),
   // Per-auth-mode tally. A run can be billed differently across its life (e.g.

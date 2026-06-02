@@ -165,7 +165,7 @@ export async function* runQueryStream(
   const tokensUsed = modelTokens > 0 ? modelTokens : inputTokens + outputTokens;
   params.tracker.add(tokensUsed);
   // Cost + per-model usage come straight from the SDK's result message — the
-  // SDK prices each model, so mixed-tier runs are attributed correctly.
+  // SDK prices each model, so mixed-model runs are attributed correctly.
   params.tracker.addCost(costUsd);
   params.tracker.addModelUsage(modelUsage);
 
