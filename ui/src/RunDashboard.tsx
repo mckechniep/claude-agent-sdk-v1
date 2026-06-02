@@ -550,18 +550,36 @@ function DashboardHeader({
             </InfoBadge>
           </MetaRow>
 
-          <MetaRow label="tier">
-            <span className="run-header-meta-pill" title={describeTier(m.config.tier)}>
-              {m.config.tier}
+          <MetaRow label="models">
+            <span className="run-header-meta-pill" title="Models used per phase">
+              {modelSummary(m.config.model)}
             </span>
-            <InfoBadge label="Model tier legend" placement="bottom">
-              <strong>Tier</strong> picks the model used for analyze / plan / execute:
+            <InfoBadge label="Per-phase models" placement="bottom">
+              Each phase spawns its own agent with its own model:
               <ul>
-                <li><code>thorough</code> — Opus 4.7 across the board. Most expensive, best reasoning.</li>
-                <li><code>balanced</code> — Sonnet 4.6 default. Good for most tasks.</li>
-                <li><code>fast</code> — Haiku 4.5 default. Cheapest, fastest, smallest context.</li>
-                <li><code>custom</code> — per-phase model overrides set in config.</li>
+                <li>analyze — <code>{m.config.model.analyze ?? m.config.model.default}</code></li>
+                <li>plan — <code>{m.config.model.plan ?? m.config.model.default}</code></li>
+                <li>execute — <code>{m.config.model.execute ?? m.config.model.default}</code></li>
               </ul>
+              {m.config.effort && (
+                <>
+                  Effort overrides:
+                  <ul>
+                    {m.config.effort.default && (
+                      <li>default — <code>{m.config.effort.default}</code></li>
+                    )}
+                    {m.config.effort.analyze && (
+                      <li>analyze — <code>{m.config.effort.analyze}</code></li>
+                    )}
+                    {m.config.effort.plan && (
+                      <li>plan — <code>{m.config.effort.plan}</code></li>
+                    )}
+                    {m.config.effort.execute && (
+                      <li>execute — <code>{m.config.effort.execute}</code></li>
+                    )}
+                  </ul>
+                </>
+              )}
             </InfoBadge>
           </MetaRow>
         </div>
@@ -888,7 +906,7 @@ function FailedRunBanner({
           preserved.
           <br /><br />
           <strong>Start a new run</strong> gives you a fresh runId. Use it
-          when you want to change the config (tier, autonomy, on-failure
+          when you want to change the config (models, autonomy, on-failure
           policy) or when the failure suggests the plan itself is wrong
           and needs re-planning, not just re-execution.
         </InfoBadge>
@@ -1016,14 +1034,14 @@ function RunConfirmationGate({
           <>
             Clicking <strong>Confirm &amp; resume</strong> continues from where this run stopped —
             it skips the finished tasks and picks up the remaining {remaining} with the configured
-            model tier ({vm.manifest.config.tier}).
+            models ({modelSummary(vm.manifest.config.model)}).
           </>
         ) : (
           <>
             Clicking <strong>Confirm &amp; start execution</strong> hands control to the executor.
-            Each task runs against its repo with the configured model tier (
-            {vm.manifest.config.tier}), commits to a per-task branch when tests pass, and reports
-            progress live below.
+            Each task runs against its repo with the configured execute model (
+            {shortModelName(vm.manifest.config.model.execute ?? vm.manifest.config.model.default)}
+            ), commits to a per-task branch when tests pass, and reports progress live below.
           </>
         )}
       </p>
@@ -1305,19 +1323,26 @@ function isInterruptedRepoForBanner(repo: RepoEntry): boolean {
   );
 }
 
-function describeTier(tier: string): string {
-  switch (tier) {
-    case "thorough":
-      return "Uses Claude Opus 4.7 for analyze, plan, and execute. Highest quality reasoning, highest cost.";
-    case "balanced":
-      return "Uses Claude Sonnet 4.6 across phases. Good default for most refactor/feature work.";
-    case "fast":
-      return "Uses Claude Haiku 4.5. Cheapest and fastest; best for small, well-scoped tasks.";
-    case "custom":
-      return "Per-phase model overrides defined in the run config.";
-    default:
-      return tier;
-  }
+function shortModelName(id: string): string {
+  if (id.startsWith("claude-opus-4-8")) return "opus 4.8";
+  if (id.startsWith("claude-opus-4-7")) return "opus 4.7";
+  if (id.startsWith("claude-opus")) return "opus";
+  if (id.startsWith("claude-sonnet")) return "sonnet 4.6";
+  if (id.startsWith("claude-haiku")) return "haiku 4.5";
+  return id;
+}
+
+function modelSummary(model: {
+  default: string;
+  analyze?: string;
+  plan?: string;
+  execute?: string;
+}): string {
+  const a = shortModelName(model.analyze ?? model.default);
+  const p = shortModelName(model.plan ?? model.default);
+  const e = shortModelName(model.execute ?? model.default);
+  if (a === p && p === e) return a;
+  return `${a} / ${p} / ${e}`;
 }
 
 function summarize(e: LogEvent): string {
