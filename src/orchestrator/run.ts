@@ -32,6 +32,11 @@ import {
   type RunConfig,
   type RunManifest,
 } from "../types.js";
+
+type ConfigPatch = {
+  model?: Partial<RunConfig["model"]>;
+  effort?: RunConfig["effort"];
+};
 import { parsePlan } from "../lib/planParser.js";
 import { BudgetTracker } from "./budget.js";
 import { runWithConcurrency } from "./concurrency.js";
@@ -45,6 +50,10 @@ export interface StepDecisions {
   proposals?: Record<string, "accept" | "reject" | "reanalyze">;
   plans?: Record<string, "accept" | "reject" | "replan">;
   runConfirmed?: boolean;
+  // Gate-time config changes: merged into manifest.config when decisions are
+  // applied. Because phases resolve their model/effort at call time, a patch
+  // takes effect on the next phase that runs. Run-wide, not per-repo.
+  configPatch?: ConfigPatch;
 }
 
 export interface StepParams {
@@ -150,6 +159,16 @@ async function applyDecisionsToState(
   runDir: string,
   decisions: StepDecisions,
 ): Promise<void> {
+  if (decisions.configPatch) {
+    const patch = decisions.configPatch;
+    manifest.config = {
+      ...manifest.config,
+      ...(patch.model ? { model: { ...manifest.config.model, ...patch.model } } : {}),
+      ...(patch.effort !== undefined
+        ? { effort: { ...manifest.config.effort, ...patch.effort } }
+        : {}),
+    };
+  }
   for (const [repoPath, action] of Object.entries(decisions.proposals ?? {})) {
     const repo = manifest.repos.find((r) => r.path === repoPath);
     if (!repo) continue;

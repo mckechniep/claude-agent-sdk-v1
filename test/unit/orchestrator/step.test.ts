@@ -530,6 +530,207 @@ function makeExecuteFn() {
   }));
 }
 
+describe("config patch via decisions", () => {
+  let target: string;
+  let stateRoot: string;
+
+  beforeEach(async () => {
+    target = await mkdtemp(join(tmpdir(), "cfgpatch-tgt-"));
+    stateRoot = await mkdtemp(join(tmpdir(), "cfgpatch-state-"));
+    vi.spyOn(authMode, "applyAuthMode").mockImplementation(() => {});
+  });
+
+  afterEach(async () => {
+    await rm(target, { recursive: true, force: true });
+    await rm(stateRoot, { recursive: true, force: true });
+    vi.restoreAllMocks();
+  });
+
+  it("applies a configPatch at the run-confirmation gate so execution uses the new model", async () => {
+    const repoPath = await makeFixtureRepo(target, "alpha");
+    const selectedRepos: DiscoveredRepo[] = [
+      {
+        path: repoPath,
+        name: "alpha",
+        stack: "jsts",
+        hasReadme: false,
+        hasTests: false,
+        lastCommitDate: null,
+        isDirty: false,
+      },
+    ];
+
+    const taskId = "55555555-5555-5555-5555-555555555555";
+
+    const analyzeFn = vi.fn(async () => ({
+      proposalPath: "/dev/null",
+      proposalMarkdown: "",
+      tokensUsed: 100,
+      durationMs: 5,
+    }));
+    const planFn = vi.fn(async () => ({
+      planPath: "/dev/null",
+      planMarkdown: "",
+      taskCount: 1,
+      tasks: [
+        {
+          taskId,
+          title: "T",
+          acceptanceCriteria: [],
+          status: "pending" as const,
+          attempts: 0,
+          tokensUsed: 0,
+          durationMs: 0,
+        },
+      ],
+      estimatedTokens: 1000,
+      estimatedDurationMs: 60_000,
+      tokensUsed: 200,
+      durationMs: 10,
+    }));
+    const executeFn = vi.fn(async (args: { task: { taskId: string; title: string } }) => ({
+      taskId: args.task.taskId,
+      title: args.task.title,
+      acceptanceCriteria: [] as string[],
+      status: "completed" as const,
+      attempts: 1,
+      tokensUsed: 500,
+      durationMs: 10,
+      commitSha: "a".repeat(40),
+      filesChanged: ["x.txt"],
+      diff: "",
+    }));
+
+    const runId = ulid();
+
+    // Drive to awaiting-run-confirmation via manual-mode decisions
+    // Step 1: bootstrap analyze (returns awaiting-proposal-approval)
+    await step({
+      runId,
+      stateRoot,
+      authMode: "api",
+      config: manualConfig(target),
+      selectedRepos,
+      analyzeFn,
+      planFn,
+      executeFn,
+    });
+
+    // Step 2: accept proposal → triggers planning → awaiting-plan-approval
+    await step({
+      runId,
+      stateRoot,
+      decisions: { proposals: { [repoPath]: "accept" } },
+      analyzeFn,
+      planFn,
+      executeFn,
+    });
+
+    // Step 3: accept plan → triggers awaiting-run-confirmation
+    await step({
+      runId,
+      stateRoot,
+      decisions: { plans: { [repoPath]: "accept" } },
+      analyzeFn,
+      planFn,
+      executeFn,
+    });
+
+    // Step 4: confirm run WITH a configPatch that switches execute to opus
+    const final = await step({
+      runId,
+      stateRoot,
+      decisions: {
+        runConfirmed: true,
+        configPatch: {
+          model: { execute: "claude-opus-4-8" },
+          effort: { execute: "high" },
+        },
+      },
+      analyzeFn,
+      planFn,
+      executeFn,
+    });
+
+    expect(final.status).toBe("completed");
+    // The persisted config was patched
+    expect(final.config.model.execute).toBe("claude-opus-4-8");
+    expect(final.config.effort?.execute).toBe("high");
+    // executeFn was called with the patched model + effort
+    expect(executeFn).toHaveBeenCalledWith(
+      expect.objectContaining({ model: "claude-opus-4-8", effort: "high" }),
+    );
+  });
+
+  it("applies a configPatch alongside a reanalyze decision so re-analysis uses the new model", async () => {
+    const repoPath = await makeFixtureRepo(target, "beta");
+    const selectedRepos: DiscoveredRepo[] = [
+      {
+        path: repoPath,
+        name: "beta",
+        stack: "jsts",
+        hasReadme: false,
+        hasTests: false,
+        lastCommitDate: null,
+        isDirty: false,
+      },
+    ];
+
+    const analyzeFn = vi.fn(async () => ({
+      proposalPath: "/dev/null",
+      proposalMarkdown: "",
+      tokensUsed: 100,
+      durationMs: 5,
+    }));
+    const planFn = vi.fn(async () => ({
+      planPath: "/dev/null",
+      planMarkdown: "",
+      taskCount: 0,
+      tasks: [],
+      estimatedTokens: 0,
+      estimatedDurationMs: 0,
+      tokensUsed: 0,
+      durationMs: 0,
+    }));
+
+    const runId = ulid();
+
+    // Step 1: first analyze (with default sonnet model)
+    await step({
+      runId,
+      stateRoot,
+      authMode: "api",
+      config: manualConfig(target),
+      selectedRepos,
+      analyzeFn,
+      planFn,
+    });
+
+    expect(analyzeFn).toHaveBeenCalledTimes(1);
+    expect(analyzeFn).toHaveBeenLastCalledWith(
+      expect.objectContaining({ model: "claude-sonnet-4-6" }),
+    );
+
+    // Step 2: reanalyze WITH configPatch switching analyze to opus
+    await step({
+      runId,
+      stateRoot,
+      decisions: {
+        proposals: { [repoPath]: "reanalyze" },
+        configPatch: { model: { analyze: "claude-opus-4-8" } },
+      },
+      analyzeFn,
+      planFn,
+    });
+
+    expect(analyzeFn).toHaveBeenCalledTimes(2);
+    // Second call must use the patched model
+    expect(analyzeFn).toHaveBeenLastCalledWith(
+      expect.objectContaining({ model: "claude-opus-4-8" }),
+    );
+  });
+});
+
 describe("prior approval restoration", () => {
   let target: string;
   let stateRoot: string;

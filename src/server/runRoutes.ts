@@ -19,6 +19,8 @@ import { openSseStream } from "./sse.js";
 import {
   AUTH_MODES,
   RunConfigSchema,
+  ModelIdSchema,
+  EffortLevelSchema,
   type AuthMode,
   type RunManifest,
   type StackId,
@@ -56,6 +58,26 @@ const StepDecisionsSchema = z.object({
   proposals: z.record(z.string(), z.enum(["accept", "reject", "reanalyze"])).optional(),
   plans: z.record(z.string(), z.enum(["accept", "reject", "replan"])).optional(),
   runConfirmed: z.boolean().optional(),
+  configPatch: z
+    .object({
+      model: z
+        .object({
+          default: ModelIdSchema.optional(),
+          analyze: ModelIdSchema.optional(),
+          plan: ModelIdSchema.optional(),
+          execute: ModelIdSchema.optional(),
+        })
+        .optional(),
+      effort: z
+        .object({
+          default: EffortLevelSchema.optional(),
+          analyze: EffortLevelSchema.optional(),
+          plan: EffortLevelSchema.optional(),
+          execute: EffortLevelSchema.optional(),
+        })
+        .optional(),
+    })
+    .optional(),
 });
 
 const StepBody = z
@@ -778,10 +800,24 @@ function isTerminal(status: string): boolean {
 
 function mergePendingDecisions(runId: string, next: z.infer<typeof StepDecisionsSchema>): void {
   const existing = pendingDecisions.get(runId) ?? {};
+
+  const mergedModel = { ...existing.configPatch?.model, ...next.configPatch?.model };
+  const mergedEffort = { ...existing.configPatch?.effort, ...next.configPatch?.effort };
+  const hasConfigPatch =
+    Object.keys(mergedModel).length > 0 || Object.keys(mergedEffort).length > 0;
+
   pendingDecisions.set(runId, {
     proposals: { ...existing.proposals, ...next.proposals },
     plans: { ...existing.plans, ...next.plans },
     runConfirmed: next.runConfirmed ?? existing.runConfirmed,
+    ...(hasConfigPatch
+      ? {
+          configPatch: {
+            ...(Object.keys(mergedModel).length > 0 ? { model: mergedModel } : {}),
+            ...(Object.keys(mergedEffort).length > 0 ? { effort: mergedEffort } : {}),
+          },
+        }
+      : {}),
   });
 }
 

@@ -233,6 +233,40 @@ describe("runRoutes", () => {
       };
       expect(body.pending.proposals).toEqual({ "/x/a": "accept", "/x/b": "reject" });
     });
+
+    it("accepts decisions carrying a valid configPatch", async () => {
+      const res = await handleSubmitDecisions(
+        VALID_RUN_ID,
+        {
+          configPatch: {
+            model: { execute: "claude-opus-4-8" },
+            effort: { default: "low" },
+          },
+        },
+        { originalApiKey: undefined },
+      );
+      expect(res.status).toBe(202);
+      const body = res.body as {
+        ok: boolean;
+        pending: { configPatch?: { model?: Record<string, string>; effort?: Record<string, string> } };
+      };
+      expect(body.ok).toBe(true);
+      expect(body.pending.configPatch?.model?.execute).toBe("claude-opus-4-8");
+      expect(body.pending.configPatch?.effort?.default).toBe("low");
+    });
+
+    it("rejects configPatch with unknown model ids", async () => {
+      const res = await handleSubmitDecisions(
+        VALID_RUN_ID,
+        {
+          configPatch: {
+            model: { execute: "gpt-4" },
+          },
+        },
+        { originalApiKey: undefined },
+      );
+      expect(res.status).toBe(400);
+    });
   });
 
   describe("handleGetManifest", () => {
