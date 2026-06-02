@@ -73,6 +73,60 @@ describe("runRoutes", () => {
       expect(body.error).toBe("invalid body");
     });
 
+    it("start-run responds without invoking any phase work (bootstrap is non-blocking)", async () => {
+      // If bootstrapOnly is NOT set, step() would immediately call the real
+      // analyze SDK which would hang or throw in a unit-test environment.
+      // With bootstrapOnly: true the route must return status 201 with a
+      // manifest that is still at "preflight" / all repos "pending" — i.e. no
+      // phase work occurred during the HTTP round-trip.
+      //
+      // handleStartRun uses makeStepFactory which does NOT inject phase fns,
+      // so if step() tries to do phase work it calls the real analyze() which
+      // will fail/hang. The contract we verify is: response arrives, manifest
+      // is at preflight, all repos pending.
+      const { mkdir: mkd } = await import("node:fs/promises");
+      const { join: pathJoin } = await import("node:path");
+
+      // Make a real repo dir so selectedRepos passes validation
+      const repoDir = pathJoin(tmpHome, "start-run-repo");
+      await mkd(repoDir, { recursive: true });
+
+      const res = await handleStartRun(
+        {
+          authMode: "subscription",
+          config: {
+            targetDir: repoDir,
+            autonomy: "manual",
+            concurrency: 1,
+            checkpointEvery: 1,
+            onFailure: "skip-repo",
+            maxRetries: 0,
+            testGate: "skip",
+            testTimeoutMs: 30_000,
+            model: { default: "claude-sonnet-4-6" },
+          },
+          selectedRepos: [
+            {
+              path: repoDir,
+              name: "start-run-repo",
+              stack: "jsts",
+              hasReadme: false,
+              hasTests: false,
+              lastCommitDate: null,
+              isDirty: false,
+            },
+          ],
+        },
+        { originalApiKey: undefined },
+      );
+
+      expect(res.status).toBe(201);
+      const body = res.body as { runId: string; manifest: { status: string; repos: Array<{ status: string }> } };
+      expect(body.manifest.status).toBe("preflight");
+      expect(body.manifest.repos).toHaveLength(1);
+      expect(body.manifest.repos[0]?.status).toBe("pending");
+    });
+
     it("rejects api auth when no key was set at server boot", async () => {
       const res = await handleStartRun(
         {

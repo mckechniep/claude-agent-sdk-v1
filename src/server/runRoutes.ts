@@ -155,6 +155,7 @@ export async function handleStartRun(payload: unknown, deps: ServerDeps): Promis
       authMode,
       config,
       selectedRepos: selectedRepos.map((r) => ({ ...r, stack: r.stack as StackId })),
+      bootstrapOnly: true,
     });
   } catch (err) {
     return {

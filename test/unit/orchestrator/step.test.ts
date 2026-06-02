@@ -249,6 +249,78 @@ describe("step", () => {
     expect(planFn).toHaveBeenCalledTimes(0);
   });
 
+  it("bootstrapOnly initializes the run without advancing any phase", async () => {
+    const repoPath = await makeFixtureRepo(target, "alpha");
+    const selectedRepos: DiscoveredRepo[] = [
+      {
+        path: repoPath,
+        name: "alpha",
+        stack: "jsts",
+        hasReadme: false,
+        hasTests: false,
+        lastCommitDate: null,
+        isDirty: false,
+      },
+    ];
+
+    const analyzeFn = vi.fn(async () => ({
+      proposalPath: "/dev/null",
+      proposalMarkdown: "",
+      tokensUsed: 100,
+      durationMs: 5,
+    }));
+    const planFn = vi.fn(async () => ({
+      planPath: "/dev/null",
+      planMarkdown: "",
+      taskCount: 0,
+      tasks: [],
+      estimatedTokens: 0,
+      estimatedDurationMs: 0,
+      tokensUsed: 0,
+      durationMs: 0,
+    }));
+    const executeFn = vi.fn(async () => ({
+      taskId: "44444444-4444-4444-4444-444444444444",
+      title: "T",
+      acceptanceCriteria: [],
+      status: "completed" as const,
+      attempts: 1,
+      tokensUsed: 0,
+      durationMs: 0,
+      commitSha: "c".repeat(40),
+      filesChanged: [],
+      diff: "",
+    }));
+
+    const runId = ulid();
+    const manifest = await step({
+      runId,
+      stateRoot,
+      authMode: "api",
+      config: yoloConfig(target),
+      selectedRepos,
+      analyzeFn,
+      planFn,
+      executeFn,
+      bootstrapOnly: true,
+    });
+
+    // Run was initialized but no phase work happened
+    expect(manifest.status).toBe("preflight");
+    expect(manifest.repos).toHaveLength(1);
+    expect(manifest.repos[0]?.status).toBe("pending");
+    expect(analyzeFn).not.toHaveBeenCalled();
+    expect(planFn).not.toHaveBeenCalled();
+    expect(executeFn).not.toHaveBeenCalled();
+
+    // Manifest was persisted: a follow-up step() without bootstrapOnly loads it
+    const { loadManifest } = await import("../../../src/state/runIndex.js");
+    const { join: pathJoin } = await import("node:path");
+    const persisted = await loadManifest(pathJoin(stateRoot, runId));
+    expect(persisted.status).toBe("preflight");
+    expect(persisted.repos[0]?.status).toBe("pending");
+  });
+
   it("throws when first step() call omits config or selectedRepos", async () => {
     await expect(step({ runId: ulid(), stateRoot, authMode: "api" })).rejects.toThrow(
       /first call requires/,

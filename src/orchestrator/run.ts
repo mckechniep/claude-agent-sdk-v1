@@ -57,6 +57,11 @@ export interface StepParams {
   // SDK query can be cancelled mid-stream. The background loop wires this
   // up; CLI callers can leave it undefined.
   abortSignal?: AbortSignal;
+  // When true, step() returns immediately after run initialization (manifest
+  // created/loaded + decisions applied) WITHOUT advancing any phase. Used by
+  // the start-run HTTP route so the response isn't blocked behind the first
+  // analyze batch — the background loop / subsequent step() calls do the work.
+  bootstrapOnly?: boolean;
 }
 
 async function tryLoadManifest(runDir: string): Promise<RunManifest | null> {
@@ -378,6 +383,10 @@ export async function step(p: StepParams): Promise<RunManifest> {
   if (p.decisions) {
     await applyDecisionsToState(manifest, runDir, p.decisions);
     await saveManifest(runDir, manifest);
+  }
+
+  if (p.bootstrapOnly) {
+    return manifest;
   }
 
   applyAuthMode(manifest.authMode);
