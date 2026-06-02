@@ -52,6 +52,11 @@ export interface DiscoveredRepo {
   hasTests: boolean;
   lastCommitDate: string | null;
   isDirty: boolean;
+  // Prior orchestrator state from the repo's .agent/ directory (validity-
+  // checked server-side). Approved repos skip the corresponding phases when
+  // a run starts.
+  hasApprovedProposal: boolean;
+  hasApprovedPlan: boolean;
 }
 
 export type DiscoverEvent =

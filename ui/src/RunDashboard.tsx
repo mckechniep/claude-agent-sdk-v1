@@ -6,6 +6,7 @@ import { navigate } from "./router";
 import { Breadcrumbs } from "./Breadcrumbs";
 import { initRunViewModel, runReducer } from "./runReducer";
 import { InfoBadge } from "./InfoBadge";
+import { shortLabel } from "./modelConfig";
 import type {
   BudgetState,
   LogEvent,
@@ -283,6 +284,14 @@ export function RunDashboard({ runId }: { runId: string }) {
 
   const selected = findSelected(vm, selectedTaskId);
 
+  // Show a "starting up" notice when a run has just been created but the
+  // background loop hasn't produced any output yet. Condition: preflight
+  // status + every repo still pending + no log events received.
+  const isWarmingUp =
+    vm.manifest.status === "preflight" &&
+    vm.manifest.repos.every((r) => r.status === "pending") &&
+    vm.recentEvents.length === 0;
+
   return (
     <PageShell runId={runId}>
       <DashboardHeader
@@ -326,6 +335,19 @@ export function RunDashboard({ runId }: { runId: string }) {
         />
       )}
       {error && <pre className="scan-err-body card-form">{error}</pre>}
+      {isWarmingUp && (
+        <section className="card run-warming-up">
+          <div className="warming-pulse" aria-hidden="true" />
+          <div>
+            <h3>Run created — analyzer starting</h3>
+            <p>
+              The background loop is spinning up the first analyze agent. First
+              output typically appears within 30–60 seconds; this page updates
+              live.
+            </p>
+          </div>
+        </section>
+      )}
       <section className="card card-form">
         <div className="card-head">
           <h2>Repos ({vm.manifest.repos.length})</h2>
@@ -1040,7 +1062,7 @@ function RunConfirmationGate({
           <>
             Clicking <strong>Confirm &amp; start execution</strong> hands control to the executor.
             Each task runs against its repo with the configured execute model (
-            {shortModelName(vm.manifest.config.model.execute ?? vm.manifest.config.model.default)}
+            {shortLabel(vm.manifest.config.model.execute ?? vm.manifest.config.model.default)}
             ), commits to a per-task branch when tests pass, and reports progress live below.
           </>
         )}
@@ -1323,24 +1345,15 @@ function isInterruptedRepoForBanner(repo: RepoEntry): boolean {
   );
 }
 
-function shortModelName(id: string): string {
-  if (id.startsWith("claude-opus-4-8")) return "opus 4.8";
-  if (id.startsWith("claude-opus-4-7")) return "opus 4.7";
-  if (id.startsWith("claude-opus")) return "opus";
-  if (id.startsWith("claude-sonnet")) return "sonnet 4.6";
-  if (id.startsWith("claude-haiku")) return "haiku 4.5";
-  return id;
-}
-
 function modelSummary(model: {
   default: string;
   analyze?: string;
   plan?: string;
   execute?: string;
 }): string {
-  const a = shortModelName(model.analyze ?? model.default);
-  const p = shortModelName(model.plan ?? model.default);
-  const e = shortModelName(model.execute ?? model.default);
+  const a = shortLabel(model.analyze ?? model.default);
+  const p = shortLabel(model.plan ?? model.default);
+  const e = shortLabel(model.execute ?? model.default);
   if (a === p && p === e) return a;
   return `${a} / ${p} / ${e}`;
 }

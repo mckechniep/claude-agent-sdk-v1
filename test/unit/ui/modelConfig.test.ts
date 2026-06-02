@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   buildEffortMap,
   buildModelMap,
+  clampEffort,
   effortOptionsFor,
   recommendedSelections,
+  shortLabel,
 } from "../../../ui/src/modelConfig";
 
 describe("recommendedSelections", () => {
@@ -34,8 +36,8 @@ describe("buildEffortMap", () => {
 
   it("includes only the phases with explicit effort", () => {
     const sel = recommendedSelections();
-    sel.execute = { ...sel.execute, effort: "low" };
-    expect(buildEffortMap(sel)).toEqual({ execute: "low" });
+    const withEffort = { ...sel, execute: { ...sel.execute, effort: "low" as const } };
+    expect(buildEffortMap(withEffort)).toEqual({ execute: "low" });
   });
 });
 
@@ -50,5 +52,28 @@ describe("effortOptionsFor", () => {
   it("always offers the model-default sentinel first", () => {
     expect(effortOptionsFor("claude-sonnet-4-6")[0]).toBe("default");
     expect(effortOptionsFor("claude-opus-4-8")[0]).toBe("default");
+  });
+});
+
+describe("clampEffort", () => {
+  it("preserves effort levels the model supports", () => {
+    expect(clampEffort("claude-haiku-4-5-20251001", "high")).toBe("high");
+    expect(clampEffort("claude-opus-4-8", "max")).toBe("max");
+  });
+
+  it("clamps opus-only levels to default on non-opus models", () => {
+    expect(clampEffort("claude-haiku-4-5-20251001", "max")).toBe("default");
+    expect(clampEffort("claude-sonnet-4-6", "xhigh")).toBe("default");
+  });
+});
+
+describe("shortLabel", () => {
+  it("returns lowercase labels for known models", () => {
+    expect(shortLabel("claude-opus-4-8")).toBe("opus 4.8");
+    expect(shortLabel("claude-haiku-4-5-20251001")).toBe("haiku 4.5");
+  });
+
+  it("falls back to the raw id for unknown models", () => {
+    expect(shortLabel("claude-future-9-9")).toBe("claude-future-9-9");
   });
 });

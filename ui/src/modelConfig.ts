@@ -56,8 +56,23 @@ export function recommendedSelections(): PhaseSelections {
   };
 }
 
+/** Clamp an effort choice to what the given model supports (xhigh/max are
+ * Opus-only). Returns "default" when the current choice isn't available. */
+export function clampEffort(model: ModelId, effort: EffortChoice): EffortChoice {
+  return effortOptionsFor(model).includes(effort) ? effort : "default";
+}
+
+/** Lowercase short name for inline prose (e.g. "opus 4.8"). Derived from
+ * MODEL_OPTIONS so model display names live in exactly one module. */
+export function shortLabel(id: string): string {
+  const opt = MODEL_OPTIONS.find((o) => o.id === id);
+  return opt ? opt.label.toLowerCase() : id;
+}
+
 /** Collapse per-phase selections into the RunConfig.model map. Every phase is
- * explicit; `default` is kept as a fallback (analyze's model, arbitrarily). */
+ * explicit; `default` is kept as a fallback (analyze's model, arbitrarily).
+ * Note: because all three phases are always emitted explicitly, the `default`
+ * key is never consulted at runtime — it exists to satisfy the schema shape. */
 export function buildModelMap(sel: PhaseSelections): ModelMap {
   return {
     default: sel.analyze.model,

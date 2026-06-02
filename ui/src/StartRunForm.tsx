@@ -9,6 +9,7 @@ import {
   MODEL_OPTIONS,
   buildEffortMap,
   buildModelMap,
+  clampEffort,
   effortOptionsFor,
   recommendedSelections,
   type AgentPhase,
@@ -92,11 +93,7 @@ export function StartRunForm() {
   const setPhaseModel = (phase: AgentPhase, model: ModelId): void => {
     setPhaseSelections((prev) => {
       const current = prev[phase];
-      // xhigh/max are opus-only; clamp effort back to default if the new
-      // model doesn't support the currently-selected level.
-      const effort = effortOptionsFor(model).includes(current.effort)
-        ? current.effort
-        : ("default" as const);
+      const effort = clampEffort(model, current.effort);
       return { ...prev, [phase]: { model, effort } };
     });
   };
@@ -222,6 +219,15 @@ export function StartRunForm() {
                       {r.isDirty && (
                         <span className="repo-flag repo-flag-dirty">dirty</span>
                       )}
+                      {r.hasApprovedPlan ? (
+                        <span className="repo-flag repo-flag-approved" title="This repo has a valid approved plan — the run will skip analyze and plan and go straight to execution.">
+                          plan ✓ · skips to execute
+                        </span>
+                      ) : r.hasApprovedProposal ? (
+                        <span className="repo-flag repo-flag-proposal" title="This repo has a valid approved proposal — the run will skip analyze and go straight to planning.">
+                          proposal ✓ · skips analyze
+                        </span>
+                      ) : null}
                       <span className="repo-select-path" title={r.path}>
                         {r.path}
                       </span>

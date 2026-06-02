@@ -930,6 +930,16 @@ pre {
   color: var(--err);
 }
 
+.repo-flag-approved {
+  background: var(--ok-soft);
+  color: var(--ok);
+}
+
+.repo-flag-proposal {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
 .repo-path {
   font-family: var(--font-mono);
   font-size: 11.5px;
@@ -2675,5 +2685,33 @@ pre {
   .phase-model-row {
     grid-template-columns: 1fr;
     gap: 0.25rem;
+  }
+}
+
+/* ---------- run warming-up notice ---------- */
+
+.run-warming-up {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+}
+
+.warming-pulse {
+  width: 0.75rem;
+  height: 0.75rem;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: warming-pulse 1.6s ease-in-out infinite;
+  flex-shrink: 0;
+}
+
+@keyframes warming-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.35; transform: scale(0.8); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .warming-pulse {
+    animation: none;
   }
 }
