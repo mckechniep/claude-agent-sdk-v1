@@ -844,6 +844,9 @@ export async function handleDeleteRun(runId: string): Promise<RouteResponse> {
       body: { error: "run is active — stop it before deleting" },
     };
   }
+  // Drop any queued-but-unconsumed decisions for this run so a deleted run
+  // leaves no trace in process memory.
+  pendingDecisions.delete(runId);
   const runDir = join(defaultStateRoot(), runId);
   try {
     // force: false so a missing directory surfaces as ENOENT, which we

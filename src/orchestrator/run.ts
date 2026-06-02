@@ -32,11 +32,6 @@ import {
   type RunConfig,
   type RunManifest,
 } from "../types.js";
-
-type ConfigPatch = {
-  model?: Partial<RunConfig["model"]>;
-  effort?: RunConfig["effort"];
-};
 import { parsePlan } from "../lib/planParser.js";
 import { BudgetTracker } from "./budget.js";
 import { runWithConcurrency } from "./concurrency.js";
@@ -45,6 +40,11 @@ import { effortFor, modelFor } from "./phaseAgents.js";
 const RUN_CONFIRMED_MARKER = "run-confirmed.json";
 
 const nowIso = (): string => new Date().toISOString();
+
+type ConfigPatch = {
+  model?: Partial<RunConfig["model"]>;
+  effort?: Partial<NonNullable<RunConfig["effort"]>>;
+};
 
 export interface StepDecisions {
   proposals?: Record<string, "accept" | "reject" | "reanalyze">;
