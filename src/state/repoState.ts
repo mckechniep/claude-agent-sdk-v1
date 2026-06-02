@@ -184,7 +184,11 @@ export async function readPriorApprovalState(repoPath: string): Promise<PriorApp
       }
     }
 
-    return { proposalApproved, planApproved, ...(planTaskCount !== undefined && { planTaskCount }) };
+    return {
+      proposalApproved,
+      planApproved,
+      ...(planTaskCount !== undefined && { planTaskCount }),
+    };
   } catch {
     // Corruption or unexpected I/O → report all-false rather than crashing
     // discovery. A corrupt .agent dir must never prevent the user from seeing

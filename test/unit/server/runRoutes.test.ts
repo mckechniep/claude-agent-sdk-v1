@@ -121,7 +121,10 @@ describe("runRoutes", () => {
       );
 
       expect(res.status).toBe(201);
-      const body = res.body as { runId: string; manifest: { status: string; repos: Array<{ status: string }> } };
+      const body = res.body as {
+        runId: string;
+        manifest: { status: string; repos: Array<{ status: string }> };
+      };
       expect(body.manifest.status).toBe("preflight");
       expect(body.manifest.repos).toHaveLength(1);
       expect(body.manifest.repos[0]?.status).toBe("pending");
