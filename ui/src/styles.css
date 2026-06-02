@@ -2776,3 +2776,55 @@ pre {
     animation: none;
   }
 }
+
+/* ---------- runs list: per-run delete + bulk clear ---------- */
+
+/* The .run grid column was 3-column; the delete button needs a 4th slot. */
+.run {
+  grid-template-columns: auto auto 1fr auto;
+}
+
+.run-delete-btn {
+  opacity: 0;
+  transition: opacity var(--t-fast) var(--ease);
+  font-size: 13px;
+  line-height: 1;
+  padding: 3px 8px !important;
+}
+
+.run:hover .run-delete-btn,
+.run-delete-btn:focus-visible {
+  opacity: 1;
+}
+
+.run-delete-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.run-delete-confirm {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: nowrap;
+}
+
+.run-delete-confirm-label {
+  font-size: 12px;
+  color: var(--ink-mute);
+  white-space: nowrap;
+  cursor: help;
+}
+
+.run-clear-confirm {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: nowrap;
+}
+
+.run-clear-confirm-label {
+  font-size: 12px;
+  color: var(--ink-mute);
+  white-space: nowrap;
+}

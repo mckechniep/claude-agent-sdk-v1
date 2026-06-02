@@ -423,6 +423,11 @@ export const api = {
       body: JSON.stringify({ mode }),
     }).then(json<StopRunResponse>),
 
+  deleteRun: (runId: string) =>
+    fetch(`/api/run/${encodeURIComponent(runId)}`, { method: "DELETE" }).then(
+      json<{ deleted: string }>,
+    ),
+
   recoverRun: (runId: string) =>
     fetch(`/api/run/${encodeURIComponent(runId)}/recover`, { method: "POST" }).then(
       json<{ runId: string; previousStatus: string; lastHeartbeatAt: string | null }>,

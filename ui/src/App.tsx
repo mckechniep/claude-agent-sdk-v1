@@ -163,6 +163,10 @@ export default function App({ refine }: { refine?: RefineParams } = {}) {
   const [authState, reloadAuth] = useAsync<AuthStatus>(() => api.authStatus(), []);
   const [runsState, reloadRuns] = useAsync<RunsResponse>(() => api.listRuns(), []);
   const [chosenMode, setChosenMode] = useState<AuthMode | null>(null);
+  const [confirmingDelete, setConfirmingDelete] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [confirmingClear, setConfirmingClear] = useState(false);
+  const [clearError, setClearError] = useState<string | null>(null);
   const [smoke, setSmoke] = useState<SmokeState>({ phase: "idle" });
   const [discover, setDiscover] = useState<DiscoverState>({ phase: "idle" });
   const [scanPath, setScanPath] = useState<string>("~/projects");
@@ -457,6 +461,57 @@ export default function App({ refine }: { refine?: RefineParams } = {}) {
           <div className="card-head">
             <h2>Runs</h2>
             <div className="card-head-actions">
+              {runsState.phase === "ok" && (() => {
+                const finished = runsState.data.runs.filter(
+                  (r) => r.status === "completed" || r.status === "failed",
+                );
+                if (finished.length < 2) return null;
+                if (confirmingClear) {
+                  return (
+                    <span className="run-clear-confirm">
+                      <span className="run-clear-confirm-label">
+                        Delete {finished.length} finished runs?
+                      </span>
+                      <button
+                        className="btn btn-danger btn-tight"
+                        onClick={() => {
+                          void Promise.allSettled(
+                            finished.map((r) => api.deleteRun(r.runId)),
+                          ).then((results) => {
+                            const failed = results.filter((r) => r.status === "rejected").length;
+                            setConfirmingClear(false);
+                            if (failed > 0) {
+                              setClearError(`${failed} of ${finished.length} could not be deleted`);
+                            } else {
+                              setClearError(null);
+                            }
+                            reloadRuns();
+                          });
+                        }}
+                      >
+                        Delete all
+                      </button>
+                      <button
+                        className="btn btn-ghost btn-tight"
+                        onClick={() => setConfirmingClear(false)}
+                      >
+                        Keep
+                      </button>
+                    </span>
+                  );
+                }
+                return (
+                  <button
+                    className="btn btn-ghost btn-tight"
+                    onClick={() => {
+                      setClearError(null);
+                      setConfirmingClear(true);
+                    }}
+                  >
+                    Clear finished ({finished.length})
+                  </button>
+                );
+              })()}
               <button
                 className="btn btn-primary btn-tight"
                 onClick={() => navigate("/runs/new")}
@@ -473,6 +528,7 @@ export default function App({ refine }: { refine?: RefineParams } = {}) {
               </button>
             </div>
           </div>
+          {clearError && <p className="err" style={{ marginTop: 0 }}>{clearError}</p>}
           {runsState.phase === "loading" && <p className="muted">loading…</p>}
           {runsState.phase === "err" && <p className="err">failed: {runsState.error}</p>}
           {runsState.phase === "ok" && (
@@ -488,27 +544,84 @@ export default function App({ refine }: { refine?: RefineParams } = {}) {
                 </div>
               ) : (
                 <ul className="runs">
-                  {runsState.data.runs.map((r) => (
-                    <li key={r.runId} className="run">
-                      <button
-                        className="run-link"
-                        onClick={() => navigate(`/runs/${r.runId}`)}
-                        title="open run dashboard"
-                      >
-                        <code className="run-id">{r.runId}</code>
-                      </button>
-                      <span className={`pill pill-${r.status}`}>{r.status}</span>
-                      <span className="run-meta">
-                        <span>
-                          {r.repoCount} repo{r.repoCount === 1 ? "" : "s"}
+                  {runsState.data.runs.map((r) => {
+                    const isActive = r.status === "running" || r.status === "stopping";
+                    const isConfirming = confirmingDelete === r.runId;
+                    return (
+                      <li key={r.runId} className="run">
+                        <button
+                          className="run-link"
+                          onClick={() => navigate(`/runs/${r.runId}`)}
+                          title="open run dashboard"
+                        >
+                          <code className="run-id">{r.runId}</code>
+                        </button>
+                        <span className={`pill pill-${r.status}`}>{r.status}</span>
+                        <span className="run-meta">
+                          <span>
+                            {r.repoCount} repo{r.repoCount === 1 ? "" : "s"}
+                          </span>
+                          <span>{r.tokensUsed.toLocaleString()} tok</span>
+                          <span>{r.authMode}</span>
                         </span>
-                        <span>{r.tokensUsed.toLocaleString()} tok</span>
-                        <span>{r.authMode}</span>
-                      </span>
-                    </li>
-                  ))}
+                        {isConfirming ? (
+                          <span className="run-delete-confirm">
+                            <span
+                              className="run-delete-confirm-label"
+                              title="Removes this run's logs and manifest. Repo .agent state (proposals, plans, approvals) is untouched."
+                            >
+                              Delete run + logs?
+                            </span>
+                            <button
+                              className="btn btn-danger btn-tight"
+                              onClick={() => {
+                                setDeleteError(null);
+                                api.deleteRun(r.runId)
+                                  .then(() => {
+                                    setConfirmingDelete(null);
+                                    reloadRuns();
+                                  })
+                                  .catch((err: unknown) => {
+                                    setConfirmingDelete(null);
+                                    setDeleteError(
+                                      err instanceof Error ? err.message : String(err),
+                                    );
+                                  });
+                              }}
+                            >
+                              Delete
+                            </button>
+                            <button
+                              className="btn btn-ghost btn-tight"
+                              onClick={() => setConfirmingDelete(null)}
+                            >
+                              Keep
+                            </button>
+                          </span>
+                        ) : (
+                          <button
+                            className="btn btn-ghost btn-tight run-delete-btn"
+                            aria-label="Delete run"
+                            title={
+                              isActive
+                                ? "Stop the run before deleting"
+                                : "Removes this run's logs and manifest. Repo .agent state (proposals, plans, approvals) is untouched."
+                            }
+                            disabled={isActive}
+                            onClick={() => {
+                              setDeleteError(null);
+                              setConfirmingDelete(r.runId);
+                            }}
+                          >
+                            ✕
+                          </button>
+                        )}
+                      </li>
+                    );
+                  })}
                 </ul>
               )}
+              {deleteError && <p className="err" style={{ marginTop: 0 }}>{deleteError}</p>}
             </>
           )}
         </section>
