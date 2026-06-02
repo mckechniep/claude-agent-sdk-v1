@@ -1,4 +1,4 @@
-import type { LogEvent, RunConfig, RunManifest } from "./runTypes";
+import type { EffortLevel, LogEvent, ModelId, RunConfig, RunManifest } from "./runTypes";
 
 export type AuthMode = "api" | "subscription";
 export type Thoroughness = "thorough" | "balanced" | "fast";
@@ -116,10 +116,31 @@ export type PlanEvent =
 export type ProposalAction = "accept" | "reject" | "reanalyze";
 export type PlanAction = "accept" | "reject" | "replan";
 
+// Gate-time config changes — merged into the run's config server-side.
+// Run-wide (not per-repo): changing the analyze model affects every repo
+// that analyzes after the change. Changing execute here affects all
+// subsequent execution, not just the current repo.
+export interface ConfigPatch {
+  model?: {
+    default?: ModelId;
+    analyze?: ModelId;
+    plan?: ModelId;
+    execute?: ModelId;
+  };
+  effort?: {
+    default?: EffortLevel;
+    analyze?: EffortLevel;
+    plan?: EffortLevel;
+    execute?: EffortLevel;
+  };
+}
+
 export interface StepDecisions {
   proposals?: Record<string, ProposalAction>;
   plans?: Record<string, PlanAction>;
   runConfirmed?: boolean;
+  // Optional run-wide config patch applied server-side at decision time.
+  configPatch?: ConfigPatch;
 }
 
 export interface StartRunBody {

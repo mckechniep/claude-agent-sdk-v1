@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
-import { api, type AuthMode } from "./api";
+import { api, type AuthMode, type ConfigPatch } from "./api";
 import RepoCard from "./RepoCard";
 import TaskForegroundPanel from "./TaskForegroundPanel";
 import { navigate } from "./router";
 import { Breadcrumbs } from "./Breadcrumbs";
 import { initRunViewModel, runReducer } from "./runReducer";
 import { InfoBadge } from "./InfoBadge";
-import { shortLabel } from "./modelConfig";
+import { MODEL_OPTIONS, effortOptionsFor, shortLabel, type EffortChoice } from "./modelConfig";
+import type { ModelId } from "./runTypes";
 import type {
   BudgetState,
   LogEvent,
@@ -230,12 +231,18 @@ export function RunDashboard({ runId }: { runId: string }) {
   };
 
   const onApproveDecision = useCallback(
-    async (repoPath: string, kind: "proposal" | "plan"): Promise<void> => {
+    async (
+      repoPath: string,
+      kind: "proposal" | "plan",
+      action: "accept" | "reanalyze" | "replan",
+      configPatch?: ConfigPatch,
+    ): Promise<void> => {
       if (submittingDecision) return;
       setSubmittingDecision(true);
       try {
         await api.submitDecisions(runId, {
-          [kind === "proposal" ? "proposals" : "plans"]: { [repoPath]: "accept" },
+          [kind === "proposal" ? "proposals" : "plans"]: { [repoPath]: action },
+          ...(configPatch ? { configPatch } : {}),
         });
         // The background loop reads this on its next tick; manifest will
         // refresh on the next state-changing event.
@@ -247,12 +254,15 @@ export function RunDashboard({ runId }: { runId: string }) {
     [runId, refreshManifest, submittingDecision],
   );
 
-  const onConfirmRun = async (): Promise<void> => {
+  const onConfirmRun = async (patch?: ConfigPatch): Promise<void> => {
     if (submittingRunConfirm) return;
     setSubmittingRunConfirm(true);
     setError(null);
     try {
-      await api.submitDecisions(runId, { runConfirmed: true });
+      await api.submitDecisions(runId, {
+        runConfirmed: true,
+        ...(patch ? { configPatch: patch } : {}),
+      });
       // Manifest will refresh on the next state-changing log event
       // (the orchestrator emits phase/task events as execution begins).
       await refreshManifest();
@@ -367,7 +377,9 @@ export function RunDashboard({ runId }: { runId: string }) {
               autonomy={vm.manifest.config.autonomy}
               selectedTaskId={selectedTaskId}
               onSelectTask={setSelectedTaskId}
-              onDecision={(kind) => onApproveDecision(repo.path, kind)}
+              onDecision={(kind, action, configPatch) =>
+                onApproveDecision(repo.path, kind, action, configPatch)
+              }
             />
           ))}
         </div>
@@ -1002,7 +1014,7 @@ function RunConfirmationGate({
   submitting,
 }: {
   vm: RunViewModel;
-  onConfirm: () => Promise<void>;
+  onConfirm: (patch?: ConfigPatch) => Promise<void>;
   submitting: boolean;
 }) {
   const repos = vm.manifest.repos.filter(
@@ -1023,6 +1035,33 @@ function RunConfirmationGate({
   // Prior progress means this is a resume, not a fresh start — make that
   // unmistakable so a reflexive click can't read as "start over".
   const isResume = done > 0;
+
+  // Gate-time execute model/effort controls. Initialized from the run's
+  // current config so the dropdowns reflect what will actually run.
+  const cfg = vm.manifest.config;
+  const configModel: ModelId = cfg.model.execute ?? cfg.model.default;
+  const configEffort = cfg.effort?.execute ?? cfg.effort?.default;
+
+  const [executeModel, setExecuteModel] = useState<ModelId>(configModel);
+  const [executeEffort, setExecuteEffort] = useState<EffortChoice>(configEffort ?? "default");
+
+  // Build a configPatch only when the user has changed something from the
+  // run's current config. The server merges patches but never deletes keys,
+  // so "model default" effort cannot clear an existing explicit effort value —
+  // in that case we omit the effort key from the patch and leave it unchanged.
+  const buildPatch = (): ConfigPatch | undefined => {
+    const patch: ConfigPatch = {};
+    if (executeModel !== configModel) {
+      patch.model = { execute: executeModel };
+    }
+    // Only include effort in the patch when the user picks a non-default value
+    // that differs from the config's current value. "model default" (sentinel)
+    // cannot delete an existing effort entry via merge, so we skip it here.
+    if (executeEffort !== "default" && executeEffort !== configEffort) {
+      patch.effort = { execute: executeEffort };
+    }
+    return patch.model ?? patch.effort ? patch : undefined;
+  };
 
   return (
     <section className={`card card-run-gate${isResume ? " card-run-gate-resume" : ""}`}>
@@ -1061,15 +1100,59 @@ function RunConfirmationGate({
         ) : (
           <>
             Clicking <strong>Confirm &amp; start execution</strong> hands control to the executor.
-            Each task runs against its repo with the configured execute model (
-            {shortLabel(vm.manifest.config.model.execute ?? vm.manifest.config.model.default)}
-            ), commits to a per-task branch when tests pass, and reports progress live below.
+            Each task runs against its repo with the selected execute model below, commits to a
+            per-task branch when tests pass, and reports progress live below.
           </>
         )}
       </p>
 
+      {/* Execute model/effort — the real cost decision moment.
+          Changing these sets the execute model for this run (run-wide, not per-repo). */}
+      <div className="phase-model-row gate-model-row">
+        <span className="phase-model-name">execute on</span>
+        <select
+          className="field-input"
+          value={executeModel}
+          onChange={(e) => {
+            const m = e.target.value as ModelId;
+            setExecuteModel(m);
+            // Clamp effort to what the new model supports
+            const opts = effortOptionsFor(m);
+            if (!opts.includes(executeEffort)) setExecuteEffort("default");
+          }}
+          aria-label="execute model for this run"
+        >
+          {MODEL_OPTIONS.map((o) => (
+            <option key={o.id} value={o.id}>
+              {o.label} — {o.hint}
+            </option>
+          ))}
+        </select>
+        <select
+          className="field-input"
+          value={executeEffort}
+          onChange={(e) => setExecuteEffort(e.target.value as EffortChoice)}
+          aria-label="execute effort for this run"
+        >
+          {effortOptionsFor(executeModel).map((lvl) => (
+            <option key={lvl} value={lvl}>
+              {lvl === "default" ? "model default" : lvl}
+            </option>
+          ))}
+        </select>
+      </div>
+      {executeModel !== configModel && (
+        <p className="gate-model-note">
+          Sets this run&apos;s execute model — applies to all repos that haven&apos;t started yet.
+        </p>
+      )}
+
       <div className="run-gate-actions">
-        <button className="btn btn-primary" onClick={() => void onConfirm()} disabled={submitting}>
+        <button
+          className="btn btn-primary"
+          onClick={() => void onConfirm(buildPatch())}
+          disabled={submitting}
+        >
           {submitting
             ? isResume
               ? "resuming…"

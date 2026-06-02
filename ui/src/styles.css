@@ -2007,6 +2007,34 @@ pre {
   margin-top: 6px;
 }
 
+/* Gate-time model/effort row (run-confirmation gate) */
+.gate-model-row {
+  margin-block: 0.75rem;
+}
+
+/* Re-analyze / re-plan model picker (proposal + plan approval gates in RepoCard) */
+.gate-reanalyze-model {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.8125rem;
+  margin-block: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.gate-reanalyze-model span:first-child {
+  opacity: 0.8;
+  white-space: nowrap;
+}
+
+/* Inline note that appears when the selected model differs from the run's
+   current config — reminds users the change is run-wide. */
+.gate-model-note {
+  opacity: 0.55;
+  font-size: 0.75rem;
+  font-style: italic;
+}
+
 /* Resume variant: amber treatment so a partial-progress gate is unmistakably
    distinct from a fresh "start execution" gate (which is green). */
 .card-run-gate-resume {

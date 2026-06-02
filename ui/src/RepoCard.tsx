@@ -1,9 +1,11 @@
 import { useEffect, useState } from "react";
-import { api } from "./api";
+import { api, type ConfigPatch } from "./api";
 import { navigate } from "./router";
 import { InfoBadge } from "./InfoBadge";
+import { MODEL_OPTIONS, effortOptionsFor, type EffortChoice } from "./modelConfig";
 import type {
   AutonomyMode,
+  ModelId,
   RepoEntry,
   RepoStatus,
   RunStatus,
@@ -39,7 +41,11 @@ interface Props {
   autonomy: AutonomyMode;
   selectedTaskId: string | null;
   onSelectTask: (taskId: string | null) => void;
-  onDecision: (kind: "proposal" | "plan", action: "accept") => Promise<void>;
+  onDecision: (
+    kind: "proposal" | "plan",
+    action: "accept" | "reanalyze" | "replan",
+    configPatch?: ConfigPatch,
+  ) => Promise<void>;
 }
 
 export function RepoCard({
@@ -110,10 +116,13 @@ export function RepoCard({
           repoPath={repo.path}
           autonomy={autonomy}
           kind={repo.status === "awaiting-proposal-approval" ? "proposal" : "plan"}
-          onAccept={() =>
+          currentAnalyzeModel={vm.manifest.config.model.analyze ?? vm.manifest.config.model.default}
+          currentPlanModel={vm.manifest.config.model.plan ?? vm.manifest.config.model.default}
+          onDecision={(action, configPatch) =>
             onDecision(
               repo.status === "awaiting-proposal-approval" ? "proposal" : "plan",
-              "accept",
+              action,
+              configPatch,
             )
           }
         />
@@ -203,19 +212,29 @@ function ApprovalGate({
   repoPath,
   autonomy,
   kind,
-  onAccept,
+  currentAnalyzeModel,
+  currentPlanModel,
+  onDecision,
 }: {
   runId: string;
   repoPath: string;
   autonomy: AutonomyMode;
   kind: "proposal" | "plan";
-  onAccept: () => Promise<void>;
+  currentAnalyzeModel: ModelId;
+  currentPlanModel: ModelId;
+  onDecision: (action: "accept" | "reanalyze" | "replan", configPatch?: ConfigPatch) => Promise<void>;
 }) {
   const [open, setOpen] = useState(false);
   const [markdown, setMarkdown] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+
+  // Model picker for re-analyze / re-plan path. Initialized from the run's
+  // current config — run-wide (changing here affects all subsequent repos
+  // of this phase, not just this one).
+  const configModel = kind === "proposal" ? currentAnalyzeModel : currentPlanModel;
+  const [selectedModel, setSelectedModel] = useState<ModelId>(configModel);
 
   useEffect(() => {
     if (!open || markdown !== null || loading) return;
@@ -232,17 +251,31 @@ function ApprovalGate({
       .finally(() => setLoading(false));
   }, [open, markdown, loading, runId, repoPath, kind]);
 
-  const onClickAccept = async (): Promise<void> => {
+  const submit = async (action: "accept" | "reanalyze" | "replan"): Promise<void> => {
     setSubmitting(true);
     setError(null);
     try {
-      await onAccept();
+      // Only include a configPatch when re-analyzing/re-planning with a
+      // different model than the run currently has. "accept" never patches.
+      let configPatch: ConfigPatch | undefined;
+      if (action !== "accept" && selectedModel !== configModel) {
+        configPatch = {
+          model: kind === "proposal" ? { analyze: selectedModel } : { plan: selectedModel },
+        };
+      }
+      await onDecision(action, configPatch);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setSubmitting(false);
     }
   };
+
+  const reAction = kind === "proposal" ? "reanalyze" : "replan";
+  const reLabel = kind === "proposal" ? "Re-analyze" : "Re-plan";
+  // Gate effort options to what the selected model supports
+  const effortOpts: EffortChoice[] = effortOptionsFor(selectedModel);
+  void effortOpts; // available if we add effort picker later
 
   return (
     <div className="repo-card-gate">
@@ -273,11 +306,49 @@ function ApprovalGate({
           <div className="proposal-actions">
             <button
               className="btn btn-primary btn-tight"
-              onClick={() => void onClickAccept()}
+              onClick={() => void submit("accept")}
               disabled={submitting}
             >
               {submitting ? "submitting…" : `Approve ${kind}`}
             </button>
+            {/* Re-analyze / re-plan with optional model override.
+                Model picker + action are shown together so it's clear
+                which model will be used. Sets this run's analyze/plan
+                model (run-wide, not per-repo). */}
+            <label className="gate-reanalyze-model">
+              <span>{reLabel} using</span>
+              <select
+                className="field-input"
+                value={selectedModel}
+                onChange={(e) => setSelectedModel(e.target.value as ModelId)}
+                aria-label={`${kind === "proposal" ? "re-analyze" : "re-plan"} model`}
+                disabled={submitting}
+              >
+                {MODEL_OPTIONS.map((o) => (
+                  <option key={o.id} value={o.id}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+              <button
+                className="btn btn-ghost btn-tight"
+                onClick={() => void submit(reAction)}
+                disabled={submitting}
+                title={
+                  selectedModel !== configModel
+                    ? `Re-run ${kind === "proposal" ? "analysis" : "planning"} — sets this run's ${kind === "proposal" ? "analyze" : "plan"} model to ${selectedModel} (run-wide)`
+                    : `Re-run ${kind === "proposal" ? "analysis" : "planning"} with the current model`
+                }
+              >
+                {submitting ? "submitting…" : reLabel}
+              </button>
+              {selectedModel !== configModel && (
+                <span className="gate-model-note">
+                  sets this run&apos;s {kind === "proposal" ? "analyze" : "plan"} model
+                </span>
+              )}
+            </label>
+
             <p className="proposal-hint">
               Approve to confirm this {kind} and continue. To refine first,
               open the <strong>{kind === "proposal" ? "Analyze" : "Plan"}</strong>{" "}
