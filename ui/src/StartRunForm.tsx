@@ -3,28 +3,18 @@ import { api, type AuthMode, type AuthStatus, type DiscoveredRepo } from "./api"
 import { navigate } from "./router";
 import { Breadcrumbs } from "./Breadcrumbs";
 import { InfoBadge } from "./InfoBadge";
-import type {
-  AutonomyMode,
-  ModelTier,
-  OnFailure,
-  RunConfig,
-  TestGate,
-} from "./runTypes";
-
-// Tier → default model mapping. Mirrors src/orchestrator/tiers.ts; UI keeps
-// its own copy to avoid a server round-trip just to render the form.
-function modelForTier(tier: ModelTier): RunConfig["model"] {
-  switch (tier) {
-    case "thorough":
-      return { default: "claude-opus-4-7" };
-    case "fast":
-      return { default: "claude-haiku-4-5-20251001" };
-    case "balanced":
-    case "custom":
-    default:
-      return { default: "claude-sonnet-4-6" };
-  }
-}
+import type { AutonomyMode, ModelId, OnFailure, RunConfig, TestGate } from "./runTypes";
+import {
+  AGENT_PHASES,
+  MODEL_OPTIONS,
+  buildEffortMap,
+  buildModelMap,
+  effortOptionsFor,
+  recommendedSelections,
+  type AgentPhase,
+  type EffortChoice,
+  type PhaseSelections,
+} from "./modelConfig";
 
 interface ScanState {
   phase: "idle" | "scanning" | "done" | "error";
@@ -41,7 +31,7 @@ export function StartRunForm() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
   const [autonomy, setAutonomy] = useState<AutonomyMode>("supervised");
-  const [tier, setTier] = useState<ModelTier>("balanced");
+  const [phaseSelections, setPhaseSelections] = useState<PhaseSelections>(recommendedSelections);
   const [concurrency, setConcurrency] = useState(1);
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [checkpointEvery, setCheckpointEvery] = useState(1);
@@ -99,22 +89,39 @@ export function StartRunForm() {
     });
   };
 
+  const setPhaseModel = (phase: AgentPhase, model: ModelId): void => {
+    setPhaseSelections((prev) => {
+      const current = prev[phase];
+      // xhigh/max are opus-only; clamp effort back to default if the new
+      // model doesn't support the currently-selected level.
+      const effort = effortOptionsFor(model).includes(current.effort)
+        ? current.effort
+        : ("default" as const);
+      return { ...prev, [phase]: { model, effort } };
+    });
+  };
+
+  const setPhaseEffort = (phase: AgentPhase, effort: EffortChoice): void => {
+    setPhaseSelections((prev) => ({ ...prev, [phase]: { ...prev[phase], effort } }));
+  };
+
   const onSubmit = async (): Promise<void> => {
     if (!authMode || selected.size === 0 || submitting) return;
     const selectedRepos = scan.repos.filter((r) => selected.has(r.path));
     if (selectedRepos.length === 0) return;
 
+    const effort = buildEffortMap(phaseSelections);
     const config: RunConfig = {
       targetDir: targetDir.trim(),
       autonomy,
-      tier,
       concurrency,
       checkpointEvery,
       onFailure,
       maxRetries,
       testGate,
       testTimeoutMs,
-      model: modelForTier(tier),
+      model: buildModelMap(phaseSelections),
+      ...(effort ? { effort } : {}),
     };
 
     setSubmitting(true);
@@ -238,7 +245,7 @@ export function StartRunForm() {
           <div className="card-head">
             <h2>2 · Run settings</h2>
             <span className="card-sub">
-              how much autonomy and which model tier
+              how much autonomy, and which model + effort per phase
             </span>
           </div>
 
@@ -291,29 +298,72 @@ export function StartRunForm() {
               </select>
             </label>
 
-            <label className="field">
+            <div className="field field-models">
               <span className="field-label">
-                tier
-                <InfoBadge label="About model tier">
-                  Picks the Claude model for analyze / plan / execute.
+                models &amp; effort
+                <InfoBadge label="About models and effort">
+                  Each phase spawns its own agent, so each phase can run a
+                  different Claude model and reasoning effort.
                   <ul>
-                    <li><code>thorough</code> — Opus 4.7 across phases. Best reasoning, highest cost.</li>
-                    <li><code>balanced</code> — Sonnet 4.6. Solid default for most refactor work.</li>
-                    <li><code>fast</code> — Haiku 4.5. Cheapest, fastest; best for small well-scoped tasks.</li>
+                    <li>
+                      <strong>Recommended:</strong> Sonnet for analyze/plan,
+                      Haiku for execute. 80%+ of a run&apos;s tokens are spent
+                      in execute — Haiku is ~90% of the capability at roughly
+                      a third of the cost.
+                    </li>
+                    <li>
+                      Bump execute to Sonnet/Opus for gnarly refactors. Bump{" "}
+                      <em>effort</em> instead of model when a phase needs more
+                      thinking rather than more capability.
+                    </li>
+                    <li>
+                      <em>effort</em> = how much reasoning the model does per
+                      response. Leave on &quot;model default&quot; unless you
+                      have a reason. <code>xhigh</code>/<code>max</code> are
+                      Opus-only.
+                    </li>
                   </ul>
-                  Switch to <code>custom</code> later in the manifest config to override per phase.
                 </InfoBadge>
               </span>
-              <select
-                className="field-input"
-                value={tier}
-                onChange={(e) => setTier(e.target.value as ModelTier)}
+
+              {AGENT_PHASES.map((phase) => (
+                <div key={phase} className="phase-model-row">
+                  <span className="phase-model-name">{phase}</span>
+                  <select
+                    className="field-input"
+                    value={phaseSelections[phase].model}
+                    onChange={(e) => setPhaseModel(phase, e.target.value as ModelId)}
+                    aria-label={`${phase} model`}
+                  >
+                    {MODEL_OPTIONS.map((opt) => (
+                      <option key={opt.id} value={opt.id}>
+                        {opt.label} — {opt.hint}
+                      </option>
+                    ))}
+                  </select>
+                  <select
+                    className="field-input"
+                    value={phaseSelections[phase].effort}
+                    onChange={(e) => setPhaseEffort(phase, e.target.value as EffortChoice)}
+                    aria-label={`${phase} effort`}
+                  >
+                    {effortOptionsFor(phaseSelections[phase].model).map((lvl) => (
+                      <option key={lvl} value={lvl}>
+                        {lvl === "default" ? "model default" : lvl}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ))}
+
+              <button
+                className="btn btn-ghost btn-reset-models"
+                onClick={() => setPhaseSelections(recommendedSelections())}
+                type="button"
               >
-                <option value="thorough">thorough · opus</option>
-                <option value="balanced">balanced · sonnet</option>
-                <option value="fast">fast · haiku</option>
-              </select>
-            </label>
+                ↺ Reset to recommended
+              </button>
+            </div>
 
             <label className="field">
               <span className="field-label">
