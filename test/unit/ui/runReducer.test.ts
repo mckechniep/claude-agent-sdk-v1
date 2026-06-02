@@ -13,7 +13,6 @@ function makeManifest(overrides: Partial<RunManifest> = {}): RunManifest {
     config: {
       targetDir: "/x",
       autonomy: "supervised",
-      tier: "balanced",
       concurrency: 1,
       checkpointEvery: 1,
       onFailure: "skip-repo",

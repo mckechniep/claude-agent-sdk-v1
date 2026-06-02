@@ -5,11 +5,20 @@
 // into a shared package and import from both sides.
 
 export type AutonomyMode = "manual" | "supervised" | "yolo";
-export type ModelTier = "thorough" | "balanced" | "fast" | "custom";
 export type ModelId =
   | "claude-sonnet-4-6"
   | "claude-haiku-4-5-20251001"
-  | "claude-opus-4-7";
+  | "claude-opus-4-7"
+  | "claude-opus-4-8";
+
+export type EffortLevel = "low" | "medium" | "high" | "xhigh" | "max";
+
+export interface EffortMap {
+  default?: EffortLevel;
+  analyze?: EffortLevel;
+  plan?: EffortLevel;
+  execute?: EffortLevel;
+}
 
 export type AuthMode = "api" | "subscription";
 export type StackId = "jsts" | "python" | "generic";
@@ -52,7 +61,6 @@ export interface ModelMap {
 export interface RunConfig {
   targetDir: string;
   autonomy: AutonomyMode;
-  tier: ModelTier;
   concurrency: number;
   checkpointEvery: number;
   onFailure: OnFailure;
@@ -62,6 +70,7 @@ export interface RunConfig {
   testGate: TestGate;
   testTimeoutMs: number;
   model: ModelMap;
+  effort?: EffortMap;
   include?: string[];
   exclude?: string[];
 }
