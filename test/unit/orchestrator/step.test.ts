@@ -8,6 +8,14 @@ import * as authMode from "../../../src/auth/mode.js";
 import { step } from "../../../src/orchestrator/run.js";
 import type { RunConfig } from "../../../src/types.js";
 import type { DiscoveredRepo } from "../../../src/phases/discover.js";
+import {
+  writeProposal,
+  writeProposalApproval,
+  writePlan,
+  writePlanApproval,
+  ensureAgentDir,
+  AGENT_DIR,
+} from "../../../src/state/repoState.js";
 
 async function makeFixtureRepo(parent: string, name: string): Promise<string> {
   const dir = join(parent, name);
@@ -443,5 +451,292 @@ describe("step", () => {
     // those phases when we paused it.
     expect(analyzeFn).toHaveBeenCalledTimes(0);
     expect(planFn).toHaveBeenCalledTimes(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Two-task plan.md fixture used across the prior-approval tests
+// ---------------------------------------------------------------------------
+const TASK_A = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
+const TASK_B = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb";
+
+const PLAN_MD = `# Plan — fixture-repo
+
+## Summary
+Implement v1.
+
+## Tasks
+
+### task: ${TASK_A}
+**Title:** Task A
+**Acceptance criteria:**
+- Criterion A1
+- Criterion A2
+
+**Dependencies:** none
+**Estimated effort:** small
+
+---
+
+### task: ${TASK_B}
+**Title:** Task B
+**Acceptance criteria:**
+- Criterion B1
+
+**Dependencies:** ${TASK_A}
+**Estimated effort:** small
+`;
+
+// Helper: build a DiscoveredRepo object pointing at an existing directory.
+function makeDiscoveredRepo(repoPath: string, name: string): DiscoveredRepo {
+  return {
+    path: repoPath,
+    name,
+    stack: "jsts",
+    hasReadme: false,
+    hasTests: false,
+    lastCommitDate: null,
+    isDirty: false,
+    hasApprovedProposal: false,
+    hasApprovedPlan: false,
+  };
+}
+
+// Helper: stub fns that should never be called for skipped phases.
+function makeNeverFns() {
+  return {
+    analyzeFn: vi.fn(async () => {
+      throw new Error("analyzeFn should not be called");
+    }),
+    planFn: vi.fn(async () => {
+      throw new Error("planFn should not be called");
+    }),
+  };
+}
+
+// Helper: executor that marks each task completed.
+function makeExecuteFn() {
+  return vi.fn(async (args: { task: { taskId: string; title: string } }) => ({
+    taskId: args.task.taskId,
+    title: args.task.title,
+    acceptanceCriteria: [] as string[],
+    status: "completed" as const,
+    attempts: 1,
+    tokensUsed: 10,
+    durationMs: 5,
+    commitSha: "c".repeat(40),
+    filesChanged: [] as string[],
+    diff: "",
+  }));
+}
+
+describe("prior approval restoration", () => {
+  let target: string;
+  let stateRoot: string;
+
+  beforeEach(async () => {
+    target = await mkdtemp(join(tmpdir(), "priorapproval-tgt-"));
+    stateRoot = await mkdtemp(join(tmpdir(), "priorapproval-state-"));
+    vi.spyOn(authMode, "applyAuthMode").mockImplementation(() => {});
+  });
+
+  afterEach(async () => {
+    await rm(target, { recursive: true, force: true });
+    await rm(stateRoot, { recursive: true, force: true });
+    vi.restoreAllMocks();
+  });
+
+  // ------------------------------------------------------------------
+  // Test 1: full plan approval → starts at awaiting-plan-approval
+  // ------------------------------------------------------------------
+  it("starts a repo with a valid approved plan at awaiting-plan-approval with taskState loaded", async () => {
+    const repoPath = await makeFixtureRepo(target, "repo-plan-approved");
+
+    // Write proposal + approval + plan + plan-approval (taskCount 2).
+    const proposalPath = await writeProposal(repoPath, "# Proposal\nDo something.");
+    await writeProposalApproval(repoPath, proposalPath);
+    const planPath = await writePlan(repoPath, PLAN_MD);
+    await writePlanApproval(repoPath, planPath, 2);
+
+    const runId = ulid();
+    const manifest = await step({
+      runId,
+      stateRoot,
+      authMode: "api",
+      config: yoloConfig(target),
+      selectedRepos: [makeDiscoveredRepo(repoPath, "repo-plan-approved")],
+      bootstrapOnly: true,
+    });
+
+    expect(manifest.status).toBe("preflight");
+    const repo = manifest.repos[0];
+    expect(repo?.status).toBe("awaiting-plan-approval");
+    expect(repo?.proposalPath).toBeTruthy();
+    expect(repo?.planPath).toBeTruthy();
+    expect(repo?.taskState).toHaveLength(2);
+    expect(repo?.taskState?.[0]?.status).toBe("pending");
+    expect(repo?.taskState?.[1]?.status).toBe("pending");
+  });
+
+  // ------------------------------------------------------------------
+  // Test 2: fully-approved repo skips analyze+plan when run advances
+  // ------------------------------------------------------------------
+  it("skips analyze AND plan for a fully-approved repo when the run advances", async () => {
+    const repoPath = await makeFixtureRepo(target, "repo-skip-both");
+
+    const proposalPath = await writeProposal(repoPath, "# Proposal\nDo something.");
+    await writeProposalApproval(repoPath, proposalPath);
+    const planPath = await writePlan(repoPath, PLAN_MD);
+    await writePlanApproval(repoPath, planPath, 2);
+
+    const { analyzeFn, planFn } = makeNeverFns();
+    const executeFn = makeExecuteFn();
+
+    const runId = ulid();
+    const manifest = await step({
+      runId,
+      stateRoot,
+      authMode: "api",
+      config: yoloConfig(target),
+      selectedRepos: [makeDiscoveredRepo(repoPath, "repo-skip-both")],
+      analyzeFn,
+      planFn,
+      executeFn,
+    });
+
+    expect(manifest.status).toBe("completed");
+    expect(analyzeFn).not.toHaveBeenCalled();
+    expect(planFn).not.toHaveBeenCalled();
+    expect(executeFn).toHaveBeenCalledTimes(2); // one call per task
+  });
+
+  // ------------------------------------------------------------------
+  // Test 3: only proposal approved → skips analyze, runs plan
+  // ------------------------------------------------------------------
+  it("starts a repo with only an approved proposal at awaiting-proposal-approval (skips analyze only)", async () => {
+    const repoPath = await makeFixtureRepo(target, "repo-proposal-only");
+
+    const proposalPath = await writeProposal(repoPath, "# Proposal\nDo something.");
+    await writeProposalApproval(repoPath, proposalPath);
+    // No plan written, no plan-approved.json.
+
+    let analyzeCallCount = 0;
+    const analyzeFn = vi.fn(async () => {
+      analyzeCallCount++;
+      throw new Error("analyzeFn should not be called");
+    });
+
+    let planCallCount = 0;
+    const planFn = vi.fn(async () => {
+      planCallCount++;
+      return {
+        planPath: join(repoPath, AGENT_DIR, "plan.md"),
+        planMarkdown: PLAN_MD,
+        taskCount: 2,
+        tasks: [
+          {
+            taskId: TASK_A,
+            title: "Task A",
+            acceptanceCriteria: ["Criterion A1"],
+            status: "pending" as const,
+            attempts: 0,
+            tokensUsed: 0,
+            durationMs: 0,
+          },
+          {
+            taskId: TASK_B,
+            title: "Task B",
+            acceptanceCriteria: ["Criterion B1"],
+            status: "pending" as const,
+            attempts: 0,
+            tokensUsed: 0,
+            durationMs: 0,
+          },
+        ],
+        estimatedTokens: 1000,
+        estimatedDurationMs: 60_000,
+        tokensUsed: 50,
+        durationMs: 10,
+      };
+    });
+    const executeFn = makeExecuteFn();
+
+    const runId = ulid();
+    const manifest = await step({
+      runId,
+      stateRoot,
+      authMode: "api",
+      config: yoloConfig(target),
+      selectedRepos: [makeDiscoveredRepo(repoPath, "repo-proposal-only")],
+      analyzeFn,
+      planFn,
+      executeFn,
+    });
+
+    expect(manifest.status).toBe("completed");
+    expect(analyzeCallCount).toBe(0);
+    expect(planCallCount).toBe(1);
+    expect(executeFn).toHaveBeenCalledTimes(2);
+  });
+
+  // ------------------------------------------------------------------
+  // Test 4: stale plan approval (task count mismatch) → starts at pending
+  // ------------------------------------------------------------------
+  it("starts repos with stale plan approvals (taskCount mismatch) at pending (full re-analysis)", async () => {
+    const repoPath = await makeFixtureRepo(target, "repo-stale-plan");
+
+    // plan.md has 2 tasks but the approval claims 3 → mismatch → stale.
+    // Also: no valid proposal artifact (don't call writeProposal at all),
+    // so the repo has nothing valid → starts at "pending".
+    await ensureAgentDir(repoPath);
+    const planPath = join(repoPath, AGENT_DIR, "plan.md");
+    await writeFile(planPath, PLAN_MD);
+    // Write plan-approved.json manually with the wrong task count.
+    const planApprovedPath = join(repoPath, AGENT_DIR, "plan-approved.json");
+    await writeFile(
+      planApprovedPath,
+      JSON.stringify({ approvedAt: new Date().toISOString(), planPath, taskCount: 3 }),
+    );
+
+    const runId = ulid();
+    const manifest = await step({
+      runId,
+      stateRoot,
+      authMode: "api",
+      config: yoloConfig(target),
+      selectedRepos: [makeDiscoveredRepo(repoPath, "repo-stale-plan")],
+      bootstrapOnly: true,
+    });
+
+    const repo = manifest.repos[0];
+    expect(repo?.status).toBe("pending");
+  });
+
+  // ------------------------------------------------------------------
+  // Test 5: client lies about approval flags → server re-checks disk
+  // ------------------------------------------------------------------
+  it("ignores client-provided approval flags (server re-checks disk)", async () => {
+    const repoPath = await makeFixtureRepo(target, "repo-no-agent-state");
+    // No .agent/ directory created — no approvals on disk.
+
+    // Lying client: flags say both are approved, but disk has nothing.
+    const lyingRepo: DiscoveredRepo = {
+      ...makeDiscoveredRepo(repoPath, "repo-no-agent-state"),
+      hasApprovedProposal: true,
+      hasApprovedPlan: true,
+    };
+
+    const runId = ulid();
+    const manifest = await step({
+      runId,
+      stateRoot,
+      authMode: "api",
+      config: yoloConfig(target),
+      selectedRepos: [lyingRepo],
+      bootstrapOnly: true,
+    });
+
+    const repo = manifest.repos[0];
+    expect(repo?.status).toBe("pending");
   });
 });

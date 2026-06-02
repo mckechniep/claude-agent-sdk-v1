@@ -9,9 +9,12 @@ import { plan } from "../phases/plan.js";
 import { getStackProfile } from "../stack/detect.js";
 import { writeAtomic } from "../state/atomicWrite.js";
 import {
+  AGENT_DIR,
   ensureAgentDir,
   ensureGitignore,
+  readPlan,
   readPlanApproval,
+  readPriorApprovalState,
   readProposalApproval,
   saveRepoState,
   writePlanApproval,
@@ -29,6 +32,7 @@ import {
   type RunConfig,
   type RunManifest,
 } from "../types.js";
+import { parsePlan } from "../lib/planParser.js";
 import { BudgetTracker } from "./budget.js";
 import { runWithConcurrency } from "./concurrency.js";
 import { effortFor, modelFor } from "./phaseAgents.js";
@@ -72,6 +76,38 @@ async function tryLoadManifest(runDir: string): Promise<RunManifest | null> {
   }
 }
 
+/**
+ * Determine a repo's starting state from its prior .agent/ approvals.
+ *
+ * Reads disk directly (never trusts client-provided flags): a repo with a
+ * still-valid approved plan starts past planning, one with a still-valid
+ * approved proposal starts past analysis, anything else starts cold.
+ * Stale approvals (artifact missing / task count drift) are treated as
+ * absent — the repo re-analyzes rather than executing a plan the user
+ * didn't actually approve.
+ */
+async function restorePriorState(repoPath: string): Promise<Partial<RepoEntry>> {
+  const prior = await readPriorApprovalState(repoPath);
+  if (prior.planApproved) {
+    const planMarkdown = await readPlan(repoPath);
+    if (planMarkdown) {
+      return {
+        status: "awaiting-plan-approval",
+        proposalPath: join(repoPath, AGENT_DIR, "completion-proposal.md"),
+        planPath: join(repoPath, AGENT_DIR, "plan.md"),
+        taskState: parsePlan(planMarkdown),
+      };
+    }
+  }
+  if (prior.proposalApproved) {
+    return {
+      status: "awaiting-proposal-approval",
+      proposalPath: join(repoPath, AGENT_DIR, "completion-proposal.md"),
+    };
+  }
+  return {};
+}
+
 async function initManifest(
   runDir: string,
   runId: string,
@@ -84,16 +120,19 @@ async function initManifest(
     createdAt: nowIso(),
     authMode,
     config,
-    repos: selectedRepos.map<RepoEntry>((r) => ({
-      path: r.path,
-      name: r.name,
-      stack: r.stack,
-      hasReadme: r.hasReadme,
-      hasTests: r.hasTests,
-      lastCommitDate: r.lastCommitDate ?? undefined,
-      status: "pending",
-      testGate: config.testGate !== "skip",
-    })),
+    repos: await Promise.all(
+      selectedRepos.map(async (r) => ({
+        path: r.path,
+        name: r.name,
+        stack: r.stack,
+        hasReadme: r.hasReadme,
+        hasTests: r.hasTests,
+        lastCommitDate: r.lastCommitDate ?? undefined,
+        status: "pending" as const,
+        testGate: config.testGate !== "skip",
+        ...(await restorePriorState(r.path)),
+      })),
+    ),
     budget: { tokensUsed: 0, startedAt: nowIso() },
     status: "preflight",
     schemaVersion: SCHEMA_VERSION,
