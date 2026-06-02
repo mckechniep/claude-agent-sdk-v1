@@ -2,6 +2,7 @@ import { readdir, stat, access } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { simpleGit } from "simple-git";
 import { detectStack } from "../stack/detect.js";
+import { readPriorApprovalState } from "../state/repoState.js";
 import type { StackId } from "../types.js";
 
 export interface DiscoveredRepo {
@@ -12,6 +13,12 @@ export interface DiscoveredRepo {
   hasTests: boolean;
   lastCommitDate: string | null;
   isDirty: boolean;
+  // Prior orchestrator state (from the repo's .agent/ directory). Lets the
+  // UI badge repos that already have approved work, and lets run bootstrap
+  // skip re-analysis. Flags are validity-checked — a dangling/stale approval
+  // reports false.
+  hasApprovedProposal: boolean;
+  hasApprovedPlan: boolean;
 }
 
 export interface DiscoverParams {
@@ -126,7 +133,18 @@ export async function describeRepo(path: string): Promise<DiscoveredRepo> {
   } catch {
     // ignore — repo metadata best-effort
   }
-  return { path, name, stack, hasReadme, hasTests, lastCommitDate, isDirty };
+  const priorState = await readPriorApprovalState(path);
+  return {
+    path,
+    name,
+    stack,
+    hasReadme,
+    hasTests,
+    lastCommitDate,
+    isDirty,
+    hasApprovedProposal: priorState.proposalApproved,
+    hasApprovedPlan: priorState.planApproved,
+  };
 }
 
 export async function* discoverReposStream(

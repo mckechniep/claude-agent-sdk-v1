@@ -40,6 +40,10 @@ const DiscoveredRepoSchema = z.object({
   hasTests: z.boolean(),
   lastCommitDate: z.string().nullable(),
   isDirty: z.boolean(),
+  // Optional: UI sends these when it knows the prior approval state. Older UI
+  // builds that don't include them still validate correctly (Zod strips them).
+  hasApprovedProposal: z.boolean().optional(),
+  hasApprovedPlan: z.boolean().optional(),
 });
 
 const StartRunBody = z.object({
@@ -154,7 +158,12 @@ export async function handleStartRun(payload: unknown, deps: ServerDeps): Promis
       ...stepParams(),
       authMode,
       config,
-      selectedRepos: selectedRepos.map((r) => ({ ...r, stack: r.stack as StackId })),
+      selectedRepos: selectedRepos.map((r) => ({
+        ...r,
+        stack: r.stack as StackId,
+        hasApprovedProposal: r.hasApprovedProposal ?? false,
+        hasApprovedPlan: r.hasApprovedPlan ?? false,
+      })),
       bootstrapOnly: true,
     });
   } catch (err) {

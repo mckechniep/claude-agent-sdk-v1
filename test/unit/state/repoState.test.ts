@@ -11,7 +11,9 @@ import {
   readPlan,
   writePlanApproval,
   readPlanApproval,
+  writeProposalApproval,
   ensureGitignore,
+  readPriorApprovalState,
 } from "../../../src/state/repoState.js";
 import type { RepoEntry } from "../../../src/types.js";
 
@@ -152,5 +154,99 @@ describe("repoState", () => {
   it("first proposal write is a no-op for plan invalidation (no plan yet)", async () => {
     await expect(writeProposal(repo, "# proposal")).resolves.toContain("completion-proposal.md");
     expect(await readPlan(repo)).toBeNull();
+  });
+});
+
+// Minimal two-task plan fixture — same format parsePlan expects.
+const TWO_TASK_PLAN = `# Plan — fixture
+
+## Tasks
+
+### task: aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa
+**Title:** Task one
+
+**Acceptance criteria:**
+- criterion a
+
+**Dependencies:** none
+**Estimated effort:** small
+
+---
+
+### task: bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb
+**Title:** Task two
+
+**Acceptance criteria:**
+- criterion b
+
+**Dependencies:** aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa
+**Estimated effort:** small
+`;
+
+describe("readPriorApprovalState", () => {
+  let repo: string;
+  beforeEach(async () => {
+    repo = await mkdtemp(join(tmpdir(), "priorstate-"));
+  });
+  afterEach(async () => {
+    await rm(repo, { recursive: true, force: true });
+  });
+
+  it("returns all-false for a repo with no .agent directory", async () => {
+    const state = await readPriorApprovalState(repo);
+    expect(state.proposalApproved).toBe(false);
+    expect(state.planApproved).toBe(false);
+    expect(state.planTaskCount).toBeUndefined();
+  });
+
+  it("returns proposalApproved=true when marker and proposal both exist", async () => {
+    const proposalPath = await writeProposal(repo, "# Proposal");
+    await writeProposalApproval(repo, proposalPath);
+    const state = await readPriorApprovalState(repo);
+    expect(state.proposalApproved).toBe(true);
+    expect(state.planApproved).toBe(false);
+  });
+
+  it("returns proposalApproved=false when marker exists but proposal file is missing", async () => {
+    // Write the approval marker directly without the actual proposal file
+    await ensureAgentDir(repo);
+    await writeFile(
+      join(repo, ".agent", "proposal-approved.json"),
+      JSON.stringify({ approvedAt: new Date().toISOString(), proposalPath: "/gone/proposal.md" }),
+    );
+    const state = await readPriorApprovalState(repo);
+    expect(state.proposalApproved).toBe(false);
+  });
+
+  it("returns planApproved=true when marker, plan.md exist and taskCount matches parsed tasks", async () => {
+    const planPath = await writePlan(repo, TWO_TASK_PLAN);
+    await writePlanApproval(repo, planPath, 2);
+    const state = await readPriorApprovalState(repo);
+    expect(state.planApproved).toBe(true);
+    expect(state.planTaskCount).toBe(2);
+  });
+
+  it("returns planApproved=false when plan.md task count does not match the approval taskCount (stale approval)", async () => {
+    const planPath = await writePlan(repo, TWO_TASK_PLAN);
+    // Approve with a WRONG taskCount (3 instead of actual 2 tasks)
+    await writePlanApproval(repo, planPath, 3);
+    const state = await readPriorApprovalState(repo);
+    expect(state.planApproved).toBe(false);
+    expect(state.planTaskCount).toBeUndefined();
+  });
+
+  it("returns planApproved=false when plan-approved.json exists but plan.md is missing", async () => {
+    await ensureAgentDir(repo);
+    await writeFile(
+      join(repo, ".agent", "plan-approved.json"),
+      JSON.stringify({
+        approvedAt: new Date().toISOString(),
+        planPath: "/gone/plan.md",
+        taskCount: 2,
+      }),
+    );
+    const state = await readPriorApprovalState(repo);
+    expect(state.planApproved).toBe(false);
+    expect(state.planTaskCount).toBeUndefined();
   });
 });
