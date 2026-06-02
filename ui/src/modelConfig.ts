@@ -82,6 +82,20 @@ export function buildModelMap(sel: PhaseSelections): ModelMap {
   };
 }
 
+/** Compact one-line readout of the current per-phase selections, for the
+ * start form's collapsed state. "sonnet 4.6 · all phases" when uniform,
+ * "analyze / plan / execute" split otherwise, with (effort) markers on
+ * phases that override effort. */
+export function selectionSummary(sel: PhaseSelections): string {
+  const part = (p: PhaseSelection): string =>
+    shortLabel(p.model) + (p.effort !== "default" ? ` (${p.effort})` : "");
+  const a = part(sel.analyze);
+  const pl = part(sel.plan);
+  const e = part(sel.execute);
+  if (a === pl && pl === e) return `${a} · all phases`;
+  return `${a} / ${pl} / ${e}`;
+}
+
 /** Collapse per-phase effort into the RunConfig.effort map. Phases left at
  * "default" are omitted; returns undefined when nothing is overridden. */
 export function buildEffortMap(sel: PhaseSelections): EffortMap | undefined {

@@ -5,6 +5,7 @@ import {
   clampEffort,
   effortOptionsFor,
   recommendedSelections,
+  selectionSummary,
   shortLabel,
 } from "../../../ui/src/modelConfig";
 
@@ -75,5 +76,28 @@ describe("shortLabel", () => {
 
   it("falls back to the raw id for unknown models", () => {
     expect(shortLabel("claude-future-9-9")).toBe("claude-future-9-9");
+  });
+});
+
+describe("selectionSummary", () => {
+  it("collapses to a single name when all phases use the same model", () => {
+    const sel = recommendedSelections();
+    const allSonnet = {
+      ...sel,
+      execute: { ...sel.execute, model: "claude-sonnet-4-6" as const },
+    };
+    expect(selectionSummary(allSonnet)).toBe("sonnet 4.6 · all phases");
+  });
+
+  it("shows the per-phase split when models differ", () => {
+    expect(selectionSummary(recommendedSelections())).toBe(
+      "sonnet 4.6 / sonnet 4.6 / haiku 4.5",
+    );
+  });
+
+  it("appends effort markers for phases with explicit effort", () => {
+    const sel = recommendedSelections();
+    const withEffort = { ...sel, execute: { ...sel.execute, effort: "low" as const } };
+    expect(selectionSummary(withEffort)).toBe("sonnet 4.6 / sonnet 4.6 / haiku 4.5 (low)");
   });
 });

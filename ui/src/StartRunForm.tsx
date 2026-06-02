@@ -12,6 +12,7 @@ import {
   clampEffort,
   effortOptionsFor,
   recommendedSelections,
+  selectionSummary,
   type AgentPhase,
   type EffortChoice,
   type PhaseSelections,
@@ -304,70 +305,16 @@ export function StartRunForm() {
               </select>
             </label>
 
-            <div className="field field-models">
-              <span className="field-label">
-                models &amp; effort
-                <InfoBadge label="About models and effort">
-                  Each phase spawns its own agent, so each phase can run a
-                  different Claude model and reasoning effort.
-                  <ul>
-                    <li>
-                      <strong>Recommended:</strong> Sonnet for analyze/plan,
-                      Haiku for execute. 80%+ of a run&apos;s tokens are spent
-                      in execute — Haiku is ~90% of the capability at roughly
-                      a third of the cost.
-                    </li>
-                    <li>
-                      Bump execute to Sonnet/Opus for gnarly refactors. Bump{" "}
-                      <em>effort</em> instead of model when a phase needs more
-                      thinking rather than more capability.
-                    </li>
-                    <li>
-                      <em>effort</em> = how much reasoning the model does per
-                      response. Leave on &quot;model default&quot; unless you
-                      have a reason. <code>xhigh</code>/<code>max</code> are
-                      Opus-only.
-                    </li>
-                  </ul>
-                </InfoBadge>
-              </span>
-
-              {AGENT_PHASES.map((phase) => (
-                <div key={phase} className="phase-model-row">
-                  <span className="phase-model-name">{phase}</span>
-                  <select
-                    className="field-input"
-                    value={phaseSelections[phase].model}
-                    onChange={(e) => setPhaseModel(phase, e.target.value as ModelId)}
-                    aria-label={`${phase} model`}
-                  >
-                    {MODEL_OPTIONS.map((opt) => (
-                      <option key={opt.id} value={opt.id}>
-                        {opt.label} — {opt.hint}
-                      </option>
-                    ))}
-                  </select>
-                  <select
-                    className="field-input"
-                    value={phaseSelections[phase].effort}
-                    onChange={(e) => setPhaseEffort(phase, e.target.value as EffortChoice)}
-                    aria-label={`${phase} effort`}
-                  >
-                    {effortOptionsFor(phaseSelections[phase].model).map((lvl) => (
-                      <option key={lvl} value={lvl}>
-                        {lvl === "default" ? "model default" : lvl}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              ))}
-
+            <div className="field field-models-summary">
+              <span className="field-label">models</span>
               <button
-                className="btn btn-ghost btn-reset-models"
-                onClick={() => setPhaseSelections(recommendedSelections())}
                 type="button"
+                className="models-summary-readout"
+                onClick={() => setAdvancedOpen(true)}
+                title="Models and effort are configured under Advanced settings. The dashboard also lets you change them at each approval gate."
               >
-                ↺ Reset to recommended
+                {selectionSummary(phaseSelections)}
+                <span className="models-summary-hint">customize ▸</span>
               </button>
             </div>
 
@@ -414,6 +361,73 @@ export function StartRunForm() {
 
           {advancedOpen && (
             <div className="setting-grid setting-grid-advanced">
+              <div className="field field-models">
+                <span className="field-label">
+                  models &amp; effort
+                  <InfoBadge label="About models and effort">
+                    Each phase spawns its own agent, so each phase can run a
+                    different Claude model and reasoning effort.
+                    <ul>
+                      <li>
+                        <strong>Recommended:</strong> Sonnet for analyze/plan,
+                        Haiku for execute. 80%+ of a run&apos;s tokens are spent
+                        in execute — Haiku is ~90% of the capability at roughly
+                        a third of the cost.
+                      </li>
+                      <li>
+                        Bump execute to Sonnet/Opus for gnarly refactors. Bump{" "}
+                        <em>effort</em> instead of model when a phase needs more
+                        thinking rather than more capability.
+                      </li>
+                      <li>
+                        <em>effort</em> = how much reasoning the model does per
+                        response. Leave on &quot;model default&quot; unless you
+                        have a reason. <code>xhigh</code>/<code>max</code> are
+                        Opus-only.
+                      </li>
+                    </ul>
+                  </InfoBadge>
+                </span>
+
+                {AGENT_PHASES.map((phase) => (
+                  <div key={phase} className="phase-model-row">
+                    <span className="phase-model-name">{phase}</span>
+                    <select
+                      className="field-input"
+                      value={phaseSelections[phase].model}
+                      onChange={(e) => setPhaseModel(phase, e.target.value as ModelId)}
+                      aria-label={`${phase} model`}
+                    >
+                      {MODEL_OPTIONS.map((opt) => (
+                        <option key={opt.id} value={opt.id}>
+                          {opt.label} — {opt.hint}
+                        </option>
+                      ))}
+                    </select>
+                    <select
+                      className="field-input"
+                      value={phaseSelections[phase].effort}
+                      onChange={(e) => setPhaseEffort(phase, e.target.value as EffortChoice)}
+                      aria-label={`${phase} effort`}
+                    >
+                      {effortOptionsFor(phaseSelections[phase].model).map((lvl) => (
+                        <option key={lvl} value={lvl}>
+                          {lvl === "default" ? "model default" : lvl}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                ))}
+
+                <button
+                  className="btn btn-ghost btn-reset-models"
+                  onClick={() => setPhaseSelections(recommendedSelections())}
+                  type="button"
+                >
+                  ↺ Reset to recommended
+                </button>
+              </div>
+
               <label className="field">
                 <span className="field-label">
                   checkpoint every (tasks)
