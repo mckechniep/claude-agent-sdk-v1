@@ -17,6 +17,7 @@ import {
   type ServerDeps,
 } from "./routes.js";
 import {
+  handleDeleteRun,
   handleGetLog,
   handleGetManifest,
   handleGetRepoArtifacts,
@@ -42,7 +43,7 @@ function applyCors(req: IncomingMessage, res: ServerResponse): void {
     res.setHeader("Access-Control-Allow-Origin", origin);
     res.setHeader("Vary", "Origin");
   }
-  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
 }
 
@@ -67,6 +68,13 @@ function send(res: ServerResponse, payload: RouteResponse): void {
   res.statusCode = payload.status;
   res.setHeader("Content-Type", "application/json; charset=utf-8");
   res.end(JSON.stringify(payload.body));
+}
+
+// Matches /api/run/:ulid — bare run-id path (no action suffix), used for
+// DELETE /api/run/:id. Returns the runId or null.
+function matchRunId(path: string): string | null {
+  const m = path.match(/^\/api\/run\/([0-9A-HJKMNP-TV-Z]{26})$/);
+  return m && m[1] ? m[1] : null;
 }
 
 // Matches /api/run/:ulid/:action where ulid is the Crockford-base-32 26-char
@@ -146,6 +154,10 @@ async function route(req: IncomingMessage, res: ServerResponse, deps: ServerDeps
     if (method === "POST" && path === "/api/run/start") {
       const body = await readJsonBody(req);
       return send(res, await handleStartRun(body, deps));
+    }
+    const deleteRunId = matchRunId(path);
+    if (method === "DELETE" && deleteRunId) {
+      return send(res, await handleDeleteRun(deleteRunId));
     }
     const logStreamRunId = matchRunLogStream(path);
     if (method === "GET" && logStreamRunId) {

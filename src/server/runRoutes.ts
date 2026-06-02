@@ -1,10 +1,12 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { rm } from "node:fs/promises";
 import { z } from "zod";
 import { ulid } from "ulid";
 import { join } from "node:path";
 import { step, switchRunAuthMode } from "../orchestrator/run.js";
 import type { StepParams } from "../orchestrator/run.js";
 import { defaultStateRoot, loadManifest, saveManifest } from "../state/runIndex.js";
+import { isErrnoCode } from "../state/atomicWrite.js";
 import { appendLogEvent, readLogTailFromByte, runLogPath } from "../state/runLog.js";
 import { readHeartbeat } from "../state/heartbeat.js";
 import { recoverRun } from "./crashRecovery.js";
@@ -819,6 +821,41 @@ function mergePendingDecisions(runId: string, next: z.infer<typeof StepDecisions
         }
       : {}),
   });
+}
+
+/**
+ * DELETE /api/run/:id — remove a run's state directory from disk.
+ *
+ * Only the run directory (manifest.json, run-log.jsonl, transcripts/) is
+ * removed. Repo .agent/ directories live inside the user's repos at entirely
+ * separate paths and are never touched — approvals and proposals survive run
+ * deletion by design and can seed future runs.
+ *
+ * Returns 409 when the run's background loop is still active in this process;
+ * the caller must stop the run first.
+ */
+export async function handleDeleteRun(runId: string): Promise<RouteResponse> {
+  if (!isValidUlid(runId)) {
+    return { status: 400, body: { error: "invalid runId" } };
+  }
+  if (isLoopActive(runId)) {
+    return {
+      status: 409,
+      body: { error: "run is active — stop it before deleting" },
+    };
+  }
+  const runDir = join(defaultStateRoot(), runId);
+  try {
+    // force: false so a missing directory surfaces as ENOENT, which we
+    // convert to 404 rather than silently succeeding on nothing.
+    await rm(runDir, { recursive: true, force: false });
+  } catch (err) {
+    if (isErrnoCode(err, "ENOENT")) {
+      return { status: 404, body: { error: "run not found" } };
+    }
+    throw err;
+  }
+  return { status: 200, body: { deleted: runId } };
 }
 
 // Test-only escape hatch for clearing decisions between cases.

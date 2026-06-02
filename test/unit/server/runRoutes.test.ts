@@ -1,5 +1,5 @@
-import { describe, expect, it, beforeEach, afterEach } from "vitest";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
+import { mkdir, mkdtemp, rm, writeFile, access } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { IncomingMessage, ServerResponse } from "node:http";
@@ -16,8 +16,10 @@ import {
   handleResumeRun,
   handleRetryFromFailure,
   handleStopRun,
+  handleDeleteRun,
   __clearPendingDecisionsForTests,
 } from "../../../src/server/runRoutes.js";
+import * as runLoop from "../../../src/server/runLoop.js";
 import { abortLoop, isLoopActive } from "../../../src/server/runLoop.js";
 import { runLogPath } from "../../../src/state/runLog.js";
 import { SCHEMA_VERSION, type RunManifest, type RunStatus } from "../../../src/types.js";
@@ -1012,6 +1014,94 @@ describe("runRoutes", () => {
 
       const res = await handleRetryFromFailure(VALID_RUN_ID, { originalApiKey: undefined });
       expect(res.status).toBe(400);
+    });
+  });
+
+  describe("handleDeleteRun", () => {
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    it("returns 400 for an invalid runId", async () => {
+      const res = await handleDeleteRun(BAD_RUN_ID);
+      expect(res.status).toBe(400);
+      const body = res.body as { error: string };
+      expect(body.error).toBe("invalid runId");
+    });
+
+    it("returns 404 when the run directory does not exist", async () => {
+      const res = await handleDeleteRun(VALID_RUN_ID);
+      expect(res.status).toBe(404);
+      const body = res.body as { error: string };
+      expect(body.error).toContain("not found");
+    });
+
+    it("deletes the run directory and returns 200", async () => {
+      const stateRoot = defaultStateRoot();
+      const runDir = join(stateRoot, VALID_RUN_ID);
+      await mkdir(runDir, { recursive: true });
+      await writeFile(join(runDir, "manifest.json"), JSON.stringify(makeManifest("completed")));
+      await writeFile(join(runDir, "run-log.jsonl"), "");
+
+      const res = await handleDeleteRun(VALID_RUN_ID);
+      expect(res.status).toBe(200);
+      const body = res.body as { deleted: string };
+      expect(body.deleted).toBe(VALID_RUN_ID);
+
+      // Directory should no longer exist.
+      await expect(access(runDir)).rejects.toThrow();
+    });
+
+    it("returns 409 while the run's background loop is active", async () => {
+      vi.spyOn(runLoop, "isLoopActive").mockReturnValue(true);
+
+      const stateRoot = defaultStateRoot();
+      const runDir = join(stateRoot, VALID_RUN_ID);
+      await mkdir(runDir, { recursive: true });
+      await writeFile(join(runDir, "manifest.json"), JSON.stringify(makeManifest("running")));
+
+      const res = await handleDeleteRun(VALID_RUN_ID);
+      expect(res.status).toBe(409);
+      const body = res.body as { error: string };
+      expect(body.error).toContain("stop");
+
+      // Directory must still exist — nothing was deleted.
+      await expect(access(runDir)).resolves.toBeUndefined();
+    });
+
+    it("never touches repo .agent directories", async () => {
+      const stateRoot = defaultStateRoot();
+      const runDir = join(stateRoot, VALID_RUN_ID);
+
+      // Create a fake repo dir with an .agent subdirectory.
+      const repoDir = join(tmpHome, "my-repo");
+      const agentDir = join(repoDir, ".agent");
+      await mkdir(agentDir, { recursive: true });
+      await writeFile(join(agentDir, "proposal.md"), "# proposal content");
+
+      // Create run dir with manifest referencing that repo.
+      await mkdir(runDir, { recursive: true });
+      const manifest: RunManifest = {
+        ...makeManifest("completed"),
+        repos: [
+          {
+            path: repoDir,
+            name: "my-repo",
+            stack: "jsts",
+            status: "completed",
+            testGate: false,
+          },
+        ],
+      };
+      await writeFile(join(runDir, "manifest.json"), JSON.stringify(manifest));
+
+      const res = await handleDeleteRun(VALID_RUN_ID);
+      expect(res.status).toBe(200);
+
+      // Run dir is gone.
+      await expect(access(runDir)).rejects.toThrow();
+      // Repo .agent dir is untouched.
+      await expect(access(join(agentDir, "proposal.md"))).resolves.toBeUndefined();
     });
   });
 });
