@@ -58,7 +58,7 @@ UI/disk-state gaps that surface once you run → reload → resume. (Source: Pha
 
 ## Model & effort selection — deferred to v0.2 (added 2026-06-02)
 
-- [ ] **Mid-run model/effort switching** — extend resume / retry-from-failure routes (which already accept `authMode`) to accept a model/effort override; the next spawned harness reads the new values from the manifest. Per-model cost attribution already works.
+- [ ] **Mid-run model/effort switching** — PARTIALLY SHIPPED 2026-06-02: gate-time changes work via the decisions `configPatch` (run-confirmation, re-analyze, re-plan). Still open: resume / retry-from-failure routes accepting a model/effort override the same way they accept `authMode`.
 - [ ] **Live model list from the Anthropic API** — replace the hardcoded `MODEL_IDS` Zod enum with a fetched + cached allowlist (the `agent-orch list-models` idea). Removes the "new model ships, enum is stale" problem this round papered over by adding claude-opus-4-8 manually.
 - [ ] **Per-model effort validation** — the SDK exposes `supportedEffortLevels` per model; validate xhigh/max against it instead of allowing them schema-wide and trusting the SDK to error.
 - [ ] **Foreman/worker model split** — when the foreman subagent architecture lands, add `foreman`/`worker` keys to the model/effort maps (the per-phase record shape was chosen so this is additive).
@@ -69,3 +69,9 @@ UI/disk-state gaps that surface once you run → reload → resume. (Source: Pha
 - [ ] **Redundant plan read in restorePriorState** — readPriorApprovalState parses plan.md for the taskCount check, then restorePriorState reads + parses it again for taskState. Extract a shared readAndValidatePlan() helper (micro-optimization, ~10ms per repo at bootstrap).
 - [ ] **Badge wording** — the StartRunForm approval badge says "skips to execute"; technically the run still pauses at run-confirmation. Consider "skips analyze + plan" for precision.
 - [ ] **Mobile phase labels** — the per-phase model grid collapses to one column below 720px and loses the phase name column; add per-group labels or a fieldset/legend structure at that breakpoint.
+
+## Gate config & run management follow-ups (added 2026-06-02, round 2)
+
+- [ ] **Per-repo model overrides** — the gate `configPatch` is run-wide; "re-analyze THIS repo with Opus" changes the run's analyze model for all repos. Per-repo overrides need a `RepoEntry`-level model field (schema change).
+- [ ] **Pre-existing test isolation flake** — `handleRetryFromFailure > resets in_progress + counts pending tasks in failed repos (skip-repo case)` occasionally fails in full-suite runs but passes in isolation. Test-isolation issue (shared state root or pendingDecisions map), not a product bug. Track down and fix.
+- [ ] **Runs list polish** — clear stale bulk-delete error counts after subsequent single deletes; reset the bulk-confirm state on list reload; comment on RunConfirmationGate dropdown staleness under multi-tab SSE updates.
