@@ -1156,6 +1156,21 @@ pre {
   background: var(--ok-soft);
 }
 
+.btn-proceed {
+  background: var(--ok);
+  color: #fff;
+  border: 1px solid transparent;
+}
+
+.btn-proceed:hover:not(:disabled) {
+  filter: brightness(1.06);
+}
+
+.btn-proceed:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .proposal-hint {
   margin: 0;
   font-size: 12px;
