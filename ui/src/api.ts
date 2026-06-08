@@ -286,6 +286,7 @@ export const api = {
       thoroughness?: Thoroughness;
       model?: ModelId;
       effort?: EffortLevel;
+      finalize?: boolean;
     },
     onEvent: (event: AnalyzeEvent) => void,
   ): StreamHandle {
@@ -297,6 +298,7 @@ export const api = {
     if (args.thoroughness) q.set("thoroughness", args.thoroughness);
     if (args.model) q.set("model", args.model);
     if (args.effort) q.set("effort", args.effort);
+    if (args.finalize) q.set("finalize", "true");
     const es = new EventSource(`/api/analyze/stream?${q.toString()}`);
     const safeParse = (msg: MessageEvent<string>): Record<string, unknown> | null => {
       try {
