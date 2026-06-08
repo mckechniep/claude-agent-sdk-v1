@@ -1,63 +1,105 @@
-import { useId, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
+import { createPortal } from "react-dom";
+import { computePopoverPosition, type Placement } from "./ui/popoverPosition";
 
 /**
  * Inline "?" badge that reveals a short explanation on hover or keyboard focus.
  *
- * Why a custom component instead of `title=`:
- *   - `title` attributes truncate, lack styling, and have inconsistent
- *     dismissal behavior across browsers and mobile.
- *   - This implementation is a CSS-positioned popover so we can wrap text,
- *     render rich content, and control timing.
+ * The popover is rendered in a portal on document.body and positioned with
+ * fixed coordinates, so it is never clipped by an ancestor's overflow (the bug
+ * that hid tooltips inside scrollable/resizable panels). Visibility is JS-driven
+ * because a portaled node is outside the badge's :hover subtree.
  *
  * Accessibility:
- *   - The badge is a real `<button>` so it lands in the tab order and
- *     screen readers announce it.
- *   - `aria-describedby` ties the popover to the badge so AT reads the
- *     description on focus.
- *   - Visibility is purely CSS-driven via :hover/:focus-within, so the
- *     popover works without JavaScript even when state updates lag.
+ *   - The badge is a real <button> so it lands in the tab order.
+ *   - aria-describedby ties the popover to the badge while it's open.
  */
 export function InfoBadge({
   label = "More info",
   placement = "top",
   children,
 }: {
-  // Visible-only-to-screen-readers description of what the badge is for.
-  // Renders something like "Info about thoroughness" — adjust per usage.
   label?: string;
-  // Where the popover renders relative to the badge.
-  //   "top"    — default. Best when the badge has clear space above.
-  //   "bottom" — best when the badge is near the top of the viewport,
-  //              e.g. in a banner at the page top, where "top" placement
-  //              would clip against the viewport edge.
-  placement?: "top" | "bottom";
+  // Preferred side; the calculator flips it when there's no room.
+  placement?: Placement;
   children: ReactNode;
 }) {
   const id = useId();
-  // The popover toggles on hover (CSS) and on click (JS, for touch users
-  // who can't hover). State is kept here so clicking re-toggles cleanly.
-  const [pinned, setPinned] = useState(false);
+  const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+  const badgeRef = useRef<HTMLButtonElement>(null);
+  const popRef = useRef<HTMLSpanElement>(null);
+
+  const reposition = useCallback(() => {
+    const badge = badgeRef.current;
+    const pop = popRef.current;
+    if (!badge || !pop) return;
+    const b = badge.getBoundingClientRect();
+    const p = pop.getBoundingClientRect();
+    const next = computePopoverPosition(
+      { top: b.top, left: b.left, width: b.width, height: b.height },
+      { width: p.width, height: p.height },
+      { width: window.innerWidth, height: window.innerHeight },
+      placement,
+    );
+    setPos({ top: next.top, left: next.left });
+  }, [placement]);
+
+  // Measure + position after the popover mounts, and on scroll/resize while open.
+  useLayoutEffect(() => {
+    if (!open) return;
+    reposition();
+    window.addEventListener("scroll", reposition, true);
+    window.addEventListener("resize", reposition);
+    return () => {
+      window.removeEventListener("scroll", reposition, true);
+      window.removeEventListener("resize", reposition);
+    };
+  }, [open, reposition]);
+
   return (
     <span
-      className={`info-badge-wrap info-badge-placement-${placement} ${pinned ? "info-badge-pinned" : ""}`}
+      className="info-badge-wrap"
+      onMouseEnter={() => setOpen(true)}
+      onMouseLeave={() => setOpen(false)}
     >
       <button
+        ref={badgeRef}
         type="button"
         className="info-badge"
         aria-label={label}
-        aria-describedby={id}
-        aria-expanded={pinned}
+        aria-describedby={open ? id : undefined}
+        aria-expanded={open}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setOpen(false)}
         onClick={(e) => {
           e.preventDefault();
-          setPinned((v) => !v);
+          setOpen((v) => !v);
         }}
-        onBlur={() => setPinned(false)}
       >
         ?
       </button>
-      <span role="tooltip" id={id} className="info-badge-popover">
-        {children}
-      </span>
+      {open &&
+        createPortal(
+          <span
+            ref={popRef}
+            role="tooltip"
+            id={id}
+            className="info-badge-popover info-badge-popover-open"
+            style={{ position: "fixed", top: pos?.top ?? -9999, left: pos?.left ?? -9999 }}
+          >
+            {children}
+          </span>,
+          document.body,
+        )}
     </span>
   );
 }

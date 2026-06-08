@@ -1468,9 +1468,6 @@ pre {
 }
 
 .info-badge-popover {
-  position: absolute;
-  left: 50%;
-  transform: translateX(-50%);
   min-width: 240px;
   max-width: 340px;
   padding: 10px 12px;
@@ -1483,46 +1480,17 @@ pre {
   text-transform: none;
   letter-spacing: 0;
   font-weight: 400;
-  z-index: 50;
+  z-index: 1000;
   opacity: 0;
   pointer-events: none;
   transition: opacity 120ms ease;
   filter: drop-shadow(0 2px 6px oklch(0% 0 0 / 0.12));
 }
 
-/* Default (top): popover above the badge, arrow points down. */
-.info-badge-placement-top .info-badge-popover {
-  bottom: calc(100% + 8px);
-}
-.info-badge-placement-top .info-badge-popover::after {
-  content: "";
-  position: absolute;
-  top: 100%;
-  left: 50%;
-  transform: translateX(-50%);
-  border: 5px solid transparent;
-  border-top-color: var(--ink);
-}
-
-/* Bottom placement: popover below the badge, arrow points up. Used in
-   the failed-run banner near the top of the page where "top" placement
-   would clip against the viewport top. */
-.info-badge-placement-bottom .info-badge-popover {
-  top: calc(100% + 8px);
-}
-.info-badge-placement-bottom .info-badge-popover::after {
-  content: "";
-  position: absolute;
-  bottom: 100%;
-  left: 50%;
-  transform: translateX(-50%);
-  border: 5px solid transparent;
-  border-bottom-color: var(--ink);
-}
-
-.info-badge-wrap:hover .info-badge-popover,
-.info-badge-wrap:focus-within .info-badge-popover,
-.info-badge-pinned .info-badge-popover {
+/* Portaled popover is positioned inline (position: fixed + top/left from the
+   calculator). Visibility is JS-driven via the -open class because the node
+   lives on document.body, outside the badge's :hover subtree. */
+.info-badge-popover-open {
   opacity: 1;
   pointer-events: auto;
 }
