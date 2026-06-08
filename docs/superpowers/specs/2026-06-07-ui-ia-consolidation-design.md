@@ -1,6 +1,6 @@
 # UI Information-Architecture Consolidation — Design
 
-> **Status:** Approved (brainstorm complete) · **Date:** 2026-06-07 · **Branch target:** new worktree off `feat/v0.1-implementation`
+> **Status:** Approved (brainstorm complete) · **Date:** 2026-06-07 · **Build location:** in place on `feat/v0.1-implementation` (worktree not needed — live run finished)
 > **Next step:** `superpowers:writing-plans` → task-by-task implementation plan.
 > **Source feedback:** six live-test observations (#1–#6) captured during Phase F1.
 
@@ -133,7 +133,7 @@ The central move is breaking up the ~1700-line `App.tsx`. Logic is already separ
 
 ## 9. Build Approach, Scope & Sequencing
 
-**Approach 1 — refactor in place, extract `useAnalyzeFlow` first.** Sub-choices: hand-rolled portal (#1), native CSS resize + maximize overlay (#3). Implemented in a **git worktree** off `feat/v0.1-implementation` so the live dev server is never disturbed; one dev-server restart at the end.
+**Approach 1 — refactor in place, extract `useAnalyzeFlow` first.** Sub-choices: hand-rolled portal (#1), native CSS resize + maximize overlay (#3). Implemented **in place on `feat/v0.1-implementation`** (the live run has finished, so no worktree isolation is needed); one dev-server restart at the end.
 
 **Build order (UI first, #2 last):**
 1. `InfoBadge` portal (#1) — small, unblocks #3.
@@ -148,7 +148,9 @@ The central move is breaking up the ~1700-line `App.tsx`. Logic is already separ
 
 ## 10. Testing (TDD; keep all 298 green; 80%+ on new modules)
 
-**UI unit** (`test/unit/ui/`): `useAnalyzeFlow` (per-repo isolation, reanalyze iteration, finalize→auto-approve→plan, approve-as-is, one-in-flight guard) — written first; `useModelDefaults` (read/write/fallback/snapshot); `RepoRow` badge derivation; base-branch picker (default, local-only, dirty warning); `InfoBadge` portal (target + behavior, not pixels); `ResizablePanel` (maximize/escape/persist).
+**Infra note:** vitest runs in a **node environment — no jsdom / RTL** (existing UI tests are logic-only, mirroring `runReducer.ts`). We add **no** DOM-testing dependency. So each new UI unit is built around a **pure core** (reducer / helper) tested directly; component rendering + native resize/drag are verified in the manual pass.
+
+**UI unit** (`test/unit/ui/`): `analyzeFlowReducer` (per-repo isolation, reanalyze iteration bump, finalize→approved+plan, approve-as-is, one-in-flight guard) — written first; model-defaults helpers (`loadDefaults`/`saveDefaults`/`defaultsOrFallback` + launch-snapshot purity); `repoBadge()` derivation; base-branch helpers (default=`currentBranch`, local-only, dirty predicate); `computePopoverPosition()` (tooltip placement math); panel helpers (maximize toggle + `load/savePanelSize`).
 
 **Server unit** (`test/unit/phases`, `test/unit/server`): `discover.ts` branch payload (mock `branchLocal`); per-repo `baseBranch` validation in the start-run payload; `ensureBranch` in run path + dirty-tree refusal (extend `git.test.ts`); analyze/plan routes accept + apply `model`/`effort` params; analyze `finalize` path (one pass, auto-approve, plan-invalidation).
 
