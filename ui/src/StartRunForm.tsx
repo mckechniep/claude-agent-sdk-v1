@@ -260,6 +260,10 @@ export function StartRunForm() {
                   const isSelected = selected.has(r.path);
                   const f = flow.get(r.path);
                   const isExpanded = expanded.has(r.path);
+                  // Tolerate discover payloads without branch info (older server,
+                  // pre-restart dev server, or a non-git edge) — never crash the row.
+                  const localBranches = r.localBranches ?? [];
+                  const currentBranch = r.currentBranch ?? "";
                   const aPhase = f.analyze.phase;
                   const proposalApproved =
                     f.analyze.phase === "done" && f.analyze.approvedAt !== null;
@@ -321,21 +325,21 @@ export function StartRunForm() {
                             {sessionBadge.text}
                           </span>
                         )}
-                        {r.localBranches.length > 1 && !r.isDirty ? (
+                        {localBranches.length > 1 && !r.isDirty ? (
                           <select
                             className="repo-base-select"
-                            value={baseBranches.get(r.path) ?? r.currentBranch}
+                            value={baseBranches.get(r.path) ?? currentBranch}
                             onChange={(e) => setBaseBranch(r.path, e.target.value)}
                             title="base branch — agent work forks off this branch"
                             aria-label={`base branch for ${r.name}`}
                           >
-                            {r.localBranches.map((b) => (
+                            {localBranches.map((b) => (
                               <option key={b} value={b}>
-                                {b === r.currentBranch ? `${b} (current)` : b}
+                                {b === currentBranch ? `${b} (current)` : b}
                               </option>
                             ))}
                           </select>
-                        ) : (
+                        ) : currentBranch || r.isDirty ? (
                           <span
                             className="repo-base-static"
                             title={
@@ -344,10 +348,10 @@ export function StartRunForm() {
                                 : "only one local branch"
                             }
                           >
-                            ⎇ {r.currentBranch || "—"}
+                            ⎇ {currentBranch || "—"}
                             {r.isDirty ? " · dirty" : ""}
                           </span>
-                        )}
+                        ) : null}
                         <button
                           type="button"
                           className="btn btn-ghost btn-tight repo-analyze-toggle"
