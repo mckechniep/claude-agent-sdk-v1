@@ -3,14 +3,13 @@ import { api, type AuthMode, type AuthStatus, type DiscoveredRepo } from "./api"
 import { navigate } from "./router";
 import { Breadcrumbs } from "./Breadcrumbs";
 import { InfoBadge } from "./InfoBadge";
+import { PhaseModelGrid } from "./PhaseModelGrid";
+import { loadDefaults } from "./modelDefaults";
 import type { AutonomyMode, ModelId, OnFailure, RunConfig, TestGate } from "./runTypes";
 import {
-  AGENT_PHASES,
-  MODEL_OPTIONS,
   buildEffortMap,
   buildModelMap,
   clampEffort,
-  effortOptionsFor,
   recommendedSelections,
   selectionSummary,
   type AgentPhase,
@@ -33,7 +32,9 @@ export function StartRunForm() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
   const [autonomy, setAutonomy] = useState<AutonomyMode>("supervised");
-  const [phaseSelections, setPhaseSelections] = useState<PhaseSelections>(recommendedSelections);
+  const [phaseSelections, setPhaseSelections] = useState<PhaseSelections>(() =>
+    loadDefaults(window.localStorage),
+  );
   const [concurrency, setConcurrency] = useState(1);
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [checkpointEvery, setCheckpointEvery] = useState(1);
@@ -389,43 +390,12 @@ export function StartRunForm() {
                   </InfoBadge>
                 </span>
 
-                {AGENT_PHASES.map((phase) => (
-                  <div key={phase} className="phase-model-row">
-                    <span className="phase-model-name">{phase}</span>
-                    <select
-                      className="field-input"
-                      value={phaseSelections[phase].model}
-                      onChange={(e) => setPhaseModel(phase, e.target.value as ModelId)}
-                      aria-label={`${phase} model`}
-                    >
-                      {MODEL_OPTIONS.map((opt) => (
-                        <option key={opt.id} value={opt.id}>
-                          {opt.label} — {opt.hint}
-                        </option>
-                      ))}
-                    </select>
-                    <select
-                      className="field-input"
-                      value={phaseSelections[phase].effort}
-                      onChange={(e) => setPhaseEffort(phase, e.target.value as EffortChoice)}
-                      aria-label={`${phase} effort`}
-                    >
-                      {effortOptionsFor(phaseSelections[phase].model).map((lvl) => (
-                        <option key={lvl} value={lvl}>
-                          {lvl === "default" ? "model default" : lvl}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                ))}
-
-                <button
-                  className="btn btn-ghost btn-reset-models"
-                  onClick={() => setPhaseSelections(recommendedSelections())}
-                  type="button"
-                >
-                  ↺ Reset to recommended
-                </button>
+                <PhaseModelGrid
+                  selections={phaseSelections}
+                  onModelChange={setPhaseModel}
+                  onEffortChange={setPhaseEffort}
+                  onReset={() => setPhaseSelections(recommendedSelections())}
+                />
               </div>
 
               <label className="field">
