@@ -12,6 +12,9 @@ export interface AnalyzePromptInput {
   previousProposal?: string;
   iteration?: number;
   thoroughness?: Thoroughness;
+  // When true, force the convergence ("defaults") mode regardless of
+  // iteration: incorporate the user's notes, stop asking questions.
+  finalize?: boolean;
 }
 
 export function renderAnalyzePrompt(input: AnalyzePromptInput): string {
@@ -29,7 +32,7 @@ export function renderAnalyzePrompt(input: AnalyzePromptInput): string {
 
   const iteration = input.iteration ?? 1;
   const thoroughness: Thoroughness = input.thoroughness ?? "balanced";
-  const modeBlock = renderAnalyzeModeBlock(iteration, thoroughness);
+  const modeBlock = renderAnalyzeModeBlock(iteration, thoroughness, input.finalize);
 
   return `# Task: Analyze a code repository and propose what "completion" means
 

@@ -50,6 +50,7 @@ const AnalyzeQuery = z.object({
   userNotes: z.string().max(20_000).optional(),
   iteration: z.number().int().min(1).max(100).optional(),
   thoroughness: ThoroughnessSchema.optional(),
+  finalize: z.boolean().optional(),
 });
 
 const ApproveBody = z.object({
@@ -375,6 +376,7 @@ export async function handleAnalyzeStream(
     userNotes: notesRaw && notesRaw.length > 0 ? notesRaw : undefined,
     iteration: iterRaw ? Number(iterRaw) : undefined,
     thoroughness: query.get("thoroughness") ?? undefined,
+    finalize: query.get("finalize") === "true",
   });
 
   if (!parsed.success) {
@@ -449,6 +451,7 @@ export async function handleAnalyzeStream(
       ...(parsed.data.userNotes ? { userNotes: parsed.data.userNotes } : {}),
       ...(parsed.data.iteration ? { iteration: parsed.data.iteration } : {}),
       ...(parsed.data.thoroughness ? { thoroughness: parsed.data.thoroughness } : {}),
+      ...(parsed.data.finalize ? { finalize: true } : {}),
     });
 
     let final: {

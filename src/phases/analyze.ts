@@ -19,6 +19,7 @@ export interface AnalyzeParams {
   thoroughness?: Thoroughness;
   model?: string;
   effort?: string;
+  finalize?: boolean;
   queryFn?: Parameters<typeof runQuery>[0]["queryFn"];
   abortSignal?: AbortSignal;
 }
@@ -49,6 +50,7 @@ export async function* analyzeStream(
     previousProposal,
     iteration: params.iteration,
     thoroughness: params.thoroughness,
+    finalize: params.finalize,
   });
 
   const gen = runQueryStream({
