@@ -16,6 +16,7 @@
     "dev:ui": "concurrently -n server,vite -c blue,magenta \"pnpm dev:server\" \"pnpm --prefix ui dev\"",
     "ui:install": "pnpm --prefix ui install",
     "typecheck": "tsc --noEmit",
+    "typecheck:ui": "tsc -p ui/tsconfig.json --noEmit",
     "lint": "eslint .",
     "format": "prettier --write .",
     "test": "vitest run",
