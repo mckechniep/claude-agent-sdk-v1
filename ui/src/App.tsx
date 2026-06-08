@@ -14,6 +14,9 @@ import {
 import { navigate, type RefineParams } from "./router";
 import { Breadcrumbs } from "./Breadcrumbs";
 import { InfoBadge } from "./InfoBadge";
+import { DefaultsPanel } from "./DefaultsPanel";
+import { buildPhaseOverride, loadDefaults, saveDefaults } from "./modelDefaults";
+import type { PhaseSelections } from "./modelConfig";
 
 function parentDir(p: string): string {
   const idx = p.lastIndexOf("/");
@@ -174,6 +177,13 @@ export default function App({ refine }: { refine?: RefineParams } = {}) {
   const [analyzeState, setAnalyzeState] = useState<AnalyzeState>({ phase: "idle" });
   const [planState, setPlanState] = useState<PlanState>({ phase: "idle" });
   const [thoroughness, setThoroughness] = useState<Thoroughness>("balanced");
+  const [defaults, setDefaults] = useState<PhaseSelections>(() =>
+    loadDefaults(window.localStorage),
+  );
+  const updateDefaults = (next: PhaseSelections): void => {
+    setDefaults(next);
+    saveDefaults(next, window.localStorage);
+  };
   const [analyzeIteration, setAnalyzeIteration] = useState(1);
   const [planIteration, setPlanIteration] = useState(1);
   const streamRef = useRef<{ close: () => void } | null>(null);
@@ -276,6 +286,7 @@ export default function App({ refine }: { refine?: RefineParams } = {}) {
         userNotes,
         iteration: iter,
         thoroughness,
+        ...buildPhaseOverride(defaults.analyze),
       },
       (event: AnalyzeEvent) => {
         setAnalyzeState((prev) =>
@@ -343,6 +354,7 @@ export default function App({ refine }: { refine?: RefineParams } = {}) {
         userNotes,
         iteration: iter,
         thoroughness,
+        ...buildPhaseOverride(defaults.plan),
       },
       (event: PlanEvent) => {
         setPlanState((prev) =>
@@ -625,6 +637,8 @@ export default function App({ refine }: { refine?: RefineParams } = {}) {
             </>
           )}
         </section>
+
+        <DefaultsPanel value={defaults} onChange={updateDefaults} />
 
         <section className="card card-discover">
           <div className="card-head">

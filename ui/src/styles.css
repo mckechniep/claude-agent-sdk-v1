@@ -131,6 +131,11 @@ pre {
   grid-row: 1;
 }
 
+.card-defaults {
+  grid-column: 2;
+  grid-row: 2;
+}
+
 .card-discover {
   grid-column: 1 / span 2;
   grid-row: 3;
@@ -142,6 +147,7 @@ pre {
   }
   .card-auth,
   .card-runs,
+  .card-defaults,
   .card-discover {
     grid-column: 1;
     grid-row: auto;
