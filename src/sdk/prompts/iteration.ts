@@ -21,7 +21,14 @@ const THRESHOLDS: Record<Thoroughness, Thresholds> = {
   fast: { narrow: 2, defaults: 3 },
 };
 
-export function computeIterationMode(iteration: number, thoroughness: Thoroughness): IterationMode {
+export function computeIterationMode(
+  iteration: number,
+  thoroughness: Thoroughness,
+  finalize = false,
+): IterationMode {
+  // finalize is the "submit answers & proceed" exit ramp: converge in one
+  // terminal pass (incorporate notes, stop asking) regardless of iteration.
+  if (finalize) return "defaults";
   const t = THRESHOLDS[thoroughness];
   if (iteration >= t.defaults) return "defaults";
   if (iteration >= t.narrow) return "narrow";
@@ -35,8 +42,12 @@ export function nextModeAt(thoroughness: Thoroughness): Thresholds {
 // Renders the mode-specific instruction block injected into the analyze
 // prompt's body. The analyzer's required output section 5 is "Open
 // questions" — we steer how that section behaves per mode.
-export function renderAnalyzeModeBlock(iteration: number, thoroughness: Thoroughness): string {
-  const mode = computeIterationMode(iteration, thoroughness);
+export function renderAnalyzeModeBlock(
+  iteration: number,
+  thoroughness: Thoroughness,
+  finalize = false,
+): string {
+  const mode = computeIterationMode(iteration, thoroughness, finalize);
   const header = `\n## Iteration ${iteration} guidance (${thoroughness}, mode: ${mode})\n`;
   switch (mode) {
     case "normal":
