@@ -2,7 +2,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { stat } from "node:fs/promises";
 import { resolve as resolvePath } from "node:path";
 import { z } from "zod";
-import { AUTH_MODES, type AuthMode } from "../types.js";
+import { AUTH_MODES, ModelIdSchema, EffortLevelSchema, type AuthMode } from "../types.js";
 import { applyAuthMode } from "../auth/mode.js";
 import { BudgetTracker } from "../orchestrator/budget.js";
 import { runQueryStream } from "../sdk/query.js";
@@ -50,6 +50,8 @@ const AnalyzeQuery = z.object({
   userNotes: z.string().max(20_000).optional(),
   iteration: z.number().int().min(1).max(100).optional(),
   thoroughness: ThoroughnessSchema.optional(),
+  model: ModelIdSchema.optional(),
+  effort: EffortLevelSchema.optional(),
   finalize: z.boolean().optional(),
 });
 
@@ -64,6 +66,8 @@ const PlanQuery = z.object({
   userNotes: z.string().max(20_000).optional(),
   iteration: z.number().int().min(1).max(100).optional(),
   thoroughness: ThoroughnessSchema.optional(),
+  model: ModelIdSchema.optional(),
+  effort: EffortLevelSchema.optional(),
 });
 
 const ApprovePlanBody = z.object({
@@ -376,6 +380,8 @@ export async function handleAnalyzeStream(
     userNotes: notesRaw && notesRaw.length > 0 ? notesRaw : undefined,
     iteration: iterRaw ? Number(iterRaw) : undefined,
     thoroughness: query.get("thoroughness") ?? undefined,
+    model: query.get("model") ?? undefined,
+    effort: query.get("effort") ?? undefined,
     finalize: query.get("finalize") === "true",
   });
 
@@ -451,6 +457,8 @@ export async function handleAnalyzeStream(
       ...(parsed.data.userNotes ? { userNotes: parsed.data.userNotes } : {}),
       ...(parsed.data.iteration ? { iteration: parsed.data.iteration } : {}),
       ...(parsed.data.thoroughness ? { thoroughness: parsed.data.thoroughness } : {}),
+      ...(parsed.data.model ? { model: parsed.data.model } : {}),
+      ...(parsed.data.effort ? { effort: parsed.data.effort } : {}),
       ...(parsed.data.finalize ? { finalize: true } : {}),
     });
 
@@ -538,6 +546,8 @@ export async function handlePlanStream(
     userNotes: notesRaw && notesRaw.length > 0 ? notesRaw : undefined,
     iteration: iterRaw ? Number(iterRaw) : undefined,
     thoroughness: query.get("thoroughness") ?? undefined,
+    model: query.get("model") ?? undefined,
+    effort: query.get("effort") ?? undefined,
   });
 
   if (!parsed.success) {
@@ -633,6 +643,8 @@ export async function handlePlanStream(
       ...(parsed.data.userNotes ? { userNotes: parsed.data.userNotes } : {}),
       ...(parsed.data.iteration ? { iteration: parsed.data.iteration } : {}),
       ...(parsed.data.thoroughness ? { thoroughness: parsed.data.thoroughness } : {}),
+      ...(parsed.data.model ? { model: parsed.data.model } : {}),
+      ...(parsed.data.effort ? { effort: parsed.data.effort } : {}),
     });
 
     let final: {
