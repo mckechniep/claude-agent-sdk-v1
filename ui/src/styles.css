@@ -42,8 +42,7 @@ body {
   line-height: 1.5;
   color: var(--ink);
   background:
-    radial-gradient(1200px 600px at 80% -10%, oklch(96% 0.04 260) 0%, transparent 60%),
-    var(--bg);
+    radial-gradient(1200px 600px at 80% -10%, oklch(96% 0.04 260) 0%, transparent 60%), var(--bg);
   -webkit-font-smoothing: antialiased;
 }
 
@@ -212,7 +211,10 @@ pre {
   cursor: pointer;
   color: inherit;
   font: inherit;
-  transition: border-color var(--t-fast) var(--ease), background var(--t-fast) var(--ease), transform var(--t-fast) var(--ease);
+  transition:
+    border-color var(--t-fast) var(--ease),
+    background var(--t-fast) var(--ease),
+    transform var(--t-fast) var(--ease);
 }
 
 .mode:hover:not(.mode-disabled) {
@@ -299,7 +301,10 @@ pre {
   padding: 9px 16px;
   border-radius: var(--r-sm);
   cursor: pointer;
-  transition: background var(--t-fast) var(--ease), transform var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease);
+  transition:
+    background var(--t-fast) var(--ease),
+    transform var(--t-fast) var(--ease),
+    border-color var(--t-fast) var(--ease);
   border: 1px solid transparent;
 }
 
@@ -403,7 +408,9 @@ pre {
   background: var(--bg-elev);
   border: 1px solid var(--line-strong);
   border-radius: var(--r-sm);
-  transition: border-color var(--t-fast) var(--ease), box-shadow var(--t-fast) var(--ease);
+  transition:
+    border-color var(--t-fast) var(--ease),
+    box-shadow var(--t-fast) var(--ease);
 }
 
 .keybox-input::placeholder {
@@ -734,8 +741,13 @@ pre {
 }
 
 @keyframes pill-stopping-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.6; }
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.6;
+  }
 }
 
 /* ---------- discover form ---------- */
@@ -770,7 +782,9 @@ pre {
   border: 1px solid var(--line);
   border-radius: var(--r-sm);
   color: var(--ink);
-  transition: border-color var(--t-fast) var(--ease), background var(--t-fast) var(--ease);
+  transition:
+    border-color var(--t-fast) var(--ease),
+    background var(--t-fast) var(--ease);
 }
 
 .field-input:hover {
@@ -1564,9 +1578,15 @@ pre {
 }
 
 @keyframes liveness-pulse {
-  0% { box-shadow: 0 0 0 0 color-mix(in oklch, var(--ok) 60%, transparent); }
-  70% { box-shadow: 0 0 0 6px color-mix(in oklch, var(--ok) 0%, transparent); }
-  100% { box-shadow: 0 0 0 0 color-mix(in oklch, var(--ok) 0%, transparent); }
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in oklch, var(--ok) 60%, transparent);
+  }
+  70% {
+    box-shadow: 0 0 0 6px color-mix(in oklch, var(--ok) 0%, transparent);
+  }
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in oklch, var(--ok) 0%, transparent);
+  }
 }
 
 .pill-liveness-slow {
@@ -1609,6 +1629,8 @@ pre {
   padding: 22px 24px;
 }
 
+/* The list lives inside a ResizablePanel which owns the border, scroll, and
+   drag/maximize sizing — so the list itself is just a flow column. */
 .repo-select {
   list-style: none;
   margin: 0;
@@ -1616,11 +1638,6 @@ pre {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  max-height: 360px;
-  overflow-y: auto;
-  border: 1px solid var(--line);
-  border-radius: var(--r-md);
-  padding: 6px;
 }
 
 .repo-select-row {
@@ -1770,7 +1787,9 @@ pre {
   cursor: pointer;
   text-align: left;
   color: var(--ink);
-  transition: border-color var(--t-fast) var(--ease), background var(--t-fast) var(--ease);
+  transition:
+    border-color var(--t-fast) var(--ease),
+    background var(--t-fast) var(--ease);
 }
 
 .models-summary-readout:hover,
@@ -1995,8 +2014,7 @@ pre {
 
 /* run-confirmation gate (manifest-level "Confirm & start execution") */
 .card-run-gate {
-  background:
-    linear-gradient(135deg, oklch(98% 0.05 145) 0%, oklch(96% 0.04 90) 100%);
+  background: linear-gradient(135deg, oklch(98% 0.05 145) 0%, oklch(96% 0.04 90) 100%);
   border: 1px solid oklch(78% 0.12 145);
   border-radius: var(--r-lg);
   padding: 22px 26px;
@@ -2808,8 +2826,15 @@ pre {
 }
 
 @keyframes warming-pulse {
-  0%, 100% { opacity: 1; transform: scale(1); }
-  50% { opacity: 0.35; transform: scale(0.8); }
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.35;
+    transform: scale(0.8);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

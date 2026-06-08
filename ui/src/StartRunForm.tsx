@@ -6,6 +6,7 @@ import { InfoBadge } from "./InfoBadge";
 import { PhaseModelGrid } from "./PhaseModelGrid";
 import { AnalyzePanel } from "./analyze/AnalyzePanel";
 import { useAnalyzeFlow } from "./analyze/useAnalyzeFlow";
+import { ResizablePanel } from "./ui/ResizablePanel";
 import { loadDefaults } from "./modelDefaults";
 import type { AutonomyMode, ModelId, OnFailure, RunConfig, TestGate } from "./runTypes";
 import {
@@ -235,97 +236,107 @@ export function StartRunForm() {
           )}
 
           {scan.repos.length > 0 && (
-            <ul className="repo-select">
-              {scan.repos.map((r) => {
-                const isSelected = selected.has(r.path);
-                const f = flow.get(r.path);
-                const isExpanded = expanded.has(r.path);
-                const aPhase = f.analyze.phase;
-                const proposalApproved =
-                  f.analyze.phase === "done" && f.analyze.approvedAt !== null;
-                const planApproved = f.plan.phase === "done" && f.plan.approvedAt !== null;
-                // Live, session-only status of the inline analyze flow. Distinct
-                // from the persisted r.hasApproved* flags below (which come from
-                // the repo's .agent/ dir on disk).
-                const sessionBadge = planApproved
-                  ? { cls: "approved", text: "plan ✓ (this session)" }
-                  : proposalApproved
-                    ? { cls: "approved", text: "proposal ✓ (this session)" }
-                    : aPhase === "running"
-                      ? { cls: "live", text: "analyzing…" }
-                      : aPhase === "done"
-                        ? { cls: "done", text: "proposal ready" }
-                        : aPhase === "error"
-                          ? { cls: "err", text: "analyze failed" }
-                          : null;
-                const toggleLabel = isExpanded
-                  ? "▾ analysis"
-                  : aPhase === "idle"
-                    ? "Analyze ▸"
-                    : "▸ analysis";
-                return (
-                  <li key={r.path} className={`repo-select-row ${isSelected ? "on" : ""}`}>
-                    <div className="repo-select-head">
-                      <label className="repo-select-label">
-                        <input
-                          type="checkbox"
-                          checked={isSelected}
-                          onChange={() => toggleRepo(r.path)}
-                        />
-                        <span className="repo-select-name">{r.name}</span>
-                        <span className={`repo-stack repo-stack-${r.stack}`}>{r.stack}</span>
-                        {r.isDirty && (
-                          <span className="repo-flag repo-flag-dirty">dirty</span>
+            <ResizablePanel
+              storageKey="repo-select"
+              title={`${scan.repos.length} repo${scan.repos.length === 1 ? "" : "s"} · drag ↘ or ⤢ to grow`}
+              minHeight={360}
+            >
+              <ul className="repo-select">
+                {scan.repos.map((r) => {
+                  const isSelected = selected.has(r.path);
+                  const f = flow.get(r.path);
+                  const isExpanded = expanded.has(r.path);
+                  const aPhase = f.analyze.phase;
+                  const proposalApproved =
+                    f.analyze.phase === "done" && f.analyze.approvedAt !== null;
+                  const planApproved = f.plan.phase === "done" && f.plan.approvedAt !== null;
+                  // Live, session-only status of the inline analyze flow. Distinct
+                  // from the persisted r.hasApproved* flags below (which come from
+                  // the repo's .agent/ dir on disk).
+                  const sessionBadge = planApproved
+                    ? { cls: "approved", text: "plan ✓ (this session)" }
+                    : proposalApproved
+                      ? { cls: "approved", text: "proposal ✓ (this session)" }
+                      : aPhase === "running"
+                        ? { cls: "live", text: "analyzing…" }
+                        : aPhase === "done"
+                          ? { cls: "done", text: "proposal ready" }
+                          : aPhase === "error"
+                            ? { cls: "err", text: "analyze failed" }
+                            : null;
+                  const toggleLabel = isExpanded
+                    ? "▾ analysis"
+                    : aPhase === "idle"
+                      ? "Analyze ▸"
+                      : "▸ analysis";
+                  return (
+                    <li key={r.path} className={`repo-select-row ${isSelected ? "on" : ""}`}>
+                      <div className="repo-select-head">
+                        <label className="repo-select-label">
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => toggleRepo(r.path)}
+                          />
+                          <span className="repo-select-name">{r.name}</span>
+                          <span className={`repo-stack repo-stack-${r.stack}`}>{r.stack}</span>
+                          {r.isDirty && <span className="repo-flag repo-flag-dirty">dirty</span>}
+                          {r.hasApprovedPlan ? (
+                            <span
+                              className="repo-flag repo-flag-approved"
+                              title="This repo has a valid approved plan — the run will skip analyze and plan and go straight to execution."
+                            >
+                              plan ✓ · skips to execute
+                            </span>
+                          ) : r.hasApprovedProposal ? (
+                            <span
+                              className="repo-flag repo-flag-proposal"
+                              title="This repo has a valid approved proposal — the run will skip analyze and go straight to planning."
+                            >
+                              proposal ✓ · skips analyze
+                            </span>
+                          ) : null}
+                          <span className="repo-select-path" title={r.path}>
+                            {r.path}
+                          </span>
+                        </label>
+                        {sessionBadge && (
+                          <span
+                            className={`repo-flag repo-analyze-badge repo-analyze-${sessionBadge.cls}`}
+                          >
+                            {sessionBadge.text}
+                          </span>
                         )}
-                        {r.hasApprovedPlan ? (
-                          <span className="repo-flag repo-flag-approved" title="This repo has a valid approved plan — the run will skip analyze and plan and go straight to execution.">
-                            plan ✓ · skips to execute
-                          </span>
-                        ) : r.hasApprovedProposal ? (
-                          <span className="repo-flag repo-flag-proposal" title="This repo has a valid approved proposal — the run will skip analyze and go straight to planning.">
-                            proposal ✓ · skips analyze
-                          </span>
-                        ) : null}
-                        <span className="repo-select-path" title={r.path}>
-                          {r.path}
-                        </span>
-                      </label>
-                      {sessionBadge && (
-                        <span
-                          className={`repo-flag repo-analyze-badge repo-analyze-${sessionBadge.cls}`}
+                        <button
+                          type="button"
+                          className="btn btn-ghost btn-tight repo-analyze-toggle"
+                          onClick={() => toggleExpanded(r.path)}
+                          aria-expanded={isExpanded}
+                          title="Analyze this repo inline — independent of whether it's selected to run."
                         >
-                          {sessionBadge.text}
-                        </span>
-                      )}
-                      <button
-                        type="button"
-                        className="btn btn-ghost btn-tight repo-analyze-toggle"
-                        onClick={() => toggleExpanded(r.path)}
-                        aria-expanded={isExpanded}
-                        title="Analyze this repo inline — independent of whether it's selected to run."
-                      >
-                        {toggleLabel}
-                      </button>
-                    </div>
-                    {isExpanded && (
-                      <div className="repo-analyze-inline">
-                        <AnalyzePanel
-                          repo={r}
-                          flow={f}
-                          onAnalyze={(notes) => flow.analyze(r, notes)}
-                          onProceed={(notes) => flow.proceedWithAnswers(r, notes)}
-                          onApprove={() => flow.approve(r)}
-                          onPlan={(notes) => flow.plan(r, notes)}
-                          onApprovePlan={(tc) => flow.approvePlan(r, tc)}
-                          onClose={() => collapse(r.path)}
-                          onThoroughnessChange={(t) => flow.setThoroughness(r.path, t)}
-                        />
+                          {toggleLabel}
+                        </button>
                       </div>
-                    )}
-                  </li>
-                );
-              })}
-            </ul>
+                      {isExpanded && (
+                        <div className="repo-analyze-inline">
+                          <AnalyzePanel
+                            repo={r}
+                            flow={f}
+                            onAnalyze={(notes) => flow.analyze(r, notes)}
+                            onProceed={(notes) => flow.proceedWithAnswers(r, notes)}
+                            onApprove={() => flow.approve(r)}
+                            onPlan={(notes) => flow.plan(r, notes)}
+                            onApprovePlan={(tc) => flow.approvePlan(r, tc)}
+                            onClose={() => collapse(r.path)}
+                            onThoroughnessChange={(t) => flow.setThoroughness(r.path, t)}
+                          />
+                        </div>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+            </ResizablePanel>
           )}
 
           {scan.phase === "done" && scan.repos.length === 0 && (
@@ -340,9 +351,7 @@ export function StartRunForm() {
         <section className="card card-form">
           <div className="card-head">
             <h2>2 · Run settings</h2>
-            <span className="card-sub">
-              how much autonomy, and which model + effort per phase
-            </span>
+            <span className="card-sub">how much autonomy, and which model + effort per phase</span>
           </div>
 
           <div className="setting-grid">
@@ -350,30 +359,25 @@ export function StartRunForm() {
               <span className="field-label">
                 autonomy
                 <InfoBadge label="About autonomy">
-                  Controls how the background loop runs and which approval
-                  gates stop it.
+                  Controls how the background loop runs and which approval gates stop it.
                   <ul>
                     <li>
-                      <code>manual</code> — no background loop. You POST{" "}
-                      <code>/step</code> yourself to advance each phase.
-                      Analyze runs one repo at a time. Every gate is a
-                      manual click. Pick this when you want full control or
-                      are debugging the orchestrator itself.
+                      <code>manual</code> — no background loop. You POST <code>/step</code> yourself
+                      to advance each phase. Analyze runs one repo at a time. Every gate is a manual
+                      click. Pick this when you want full control or are debugging the orchestrator
+                      itself.
                     </li>
                     <li>
-                      <code>supervised</code> — background loop drives the
-                      run between gates. <strong>Still stops at every
-                      approval gate</strong> (proposal, plan, run-start);
-                      the loop auto-resumes when you submit a decision.
-                      Preflight runs repos in parallel. Pick this when you
-                      want hands-off scheduling but still want to review
-                      each proposal + plan + the final go-no-go.
+                      <code>supervised</code> — background loop drives the run between gates.{" "}
+                      <strong>Still stops at every approval gate</strong> (proposal, plan,
+                      run-start); the loop auto-resumes when you submit a decision. Preflight runs
+                      repos in parallel. Pick this when you want hands-off scheduling but still want
+                      to review each proposal + plan + the final go-no-go.
                     </li>
                     <li>
-                      <code>yolo</code> — background loop runs end-to-end
-                      with <strong>no gates at all</strong>. Proposals,
-                      plans, and run-start are auto-approved as they
-                      appear. Pick this when you trust the plan and want
+                      <code>yolo</code> — background loop runs end-to-end with{" "}
+                      <strong>no gates at all</strong>. Proposals, plans, and run-start are
+                      auto-approved as they appear. Pick this when you trust the plan and want
                       zero-touch execution.
                     </li>
                   </ul>
@@ -384,9 +388,7 @@ export function StartRunForm() {
                 value={autonomy}
                 onChange={(e) => setAutonomy(e.target.value as AutonomyMode)}
               >
-                <option value="manual">
-                  manual — stop at every gate
-                </option>
+                <option value="manual">manual — stop at every gate</option>
                 <option value="supervised">
                   supervised — loop auto-runs between gates, you approve each
                 </option>
@@ -411,12 +413,10 @@ export function StartRunForm() {
               <span className="field-label">
                 concurrency
                 <InfoBadge label="About concurrency">
-                  How many repos the executor processes in parallel. Each
-                  parallel slot runs its own SDK query — useful when working
-                  across independent repos, but multiplies token spend per
-                  wall-clock minute. Stay at <code>1</code> unless you&apos;ve
-                  set <code>--max-concurrent-anthropic-requests</code> high
-                  enough to handle the burst.
+                  How many repos the executor processes in parallel. Each parallel slot runs its own
+                  SDK query — useful when working across independent repos, but multiplies token
+                  spend per wall-clock minute. Stay at <code>1</code> unless you&apos;ve set{" "}
+                  <code>--max-concurrent-anthropic-requests</code> high enough to handle the burst.
                 </InfoBadge>
               </span>
               <select
@@ -454,25 +454,23 @@ export function StartRunForm() {
                 <span className="field-label">
                   models &amp; effort
                   <InfoBadge label="About models and effort">
-                    Each phase spawns its own agent, so each phase can run a
-                    different Claude model and reasoning effort.
+                    Each phase spawns its own agent, so each phase can run a different Claude model
+                    and reasoning effort.
                     <ul>
                       <li>
-                        <strong>Recommended:</strong> Sonnet for analyze/plan,
-                        Haiku for execute. 80%+ of a run&apos;s tokens are spent
-                        in execute — Haiku is ~90% of the capability at roughly
-                        a third of the cost.
+                        <strong>Recommended:</strong> Sonnet for analyze/plan, Haiku for execute.
+                        80%+ of a run&apos;s tokens are spent in execute — Haiku is ~90% of the
+                        capability at roughly a third of the cost.
                       </li>
                       <li>
-                        Bump execute to Sonnet/Opus for gnarly refactors. Bump{" "}
-                        <em>effort</em> instead of model when a phase needs more
-                        thinking rather than more capability.
+                        Bump execute to Sonnet/Opus for gnarly refactors. Bump <em>effort</em>{" "}
+                        instead of model when a phase needs more thinking rather than more
+                        capability.
                       </li>
                       <li>
-                        <em>effort</em> = how much reasoning the model does per
-                        response. Leave on &quot;model default&quot; unless you
-                        have a reason. <code>xhigh</code>/<code>max</code> are
-                        Opus-only.
+                        <em>effort</em> = how much reasoning the model does per response. Leave on
+                        &quot;model default&quot; unless you have a reason. <code>xhigh</code>/
+                        <code>max</code> are Opus-only.
                       </li>
                     </ul>
                   </InfoBadge>
@@ -490,12 +488,13 @@ export function StartRunForm() {
                 <span className="field-label">
                   checkpoint every (tasks)
                   <InfoBadge label="About checkpoint cadence">
-                    Pauses the loop after every N completed tasks so you can
-                    inspect progress before more work happens. <code>0</code>
-                    disables checkpointing (loop runs until completion or
-                    failure). <code>1</code> is the default — stop after each
-                    task. Useful for unfamiliar repos where you want a
-                    look-see before committing more SDK budget.
+                    Pauses the loop after every N completed tasks so you can inspect progress before
+                    more work happens. <code>0</code>
+                    disables checkpointing (loop runs until completion or failure). <code>
+                      1
+                    </code>{" "}
+                    is the default — stop after each task. Useful for unfamiliar repos where you
+                    want a look-see before committing more SDK budget.
                   </InfoBadge>
                 </span>
                 <input
@@ -510,13 +509,23 @@ export function StartRunForm() {
                 <span className="field-label">
                   on failure
                   <InfoBadge label="About failure handling">
-                    What to do when a task fails (test gate failure, agent
-                    can&apos;t make progress, etc.).
+                    What to do when a task fails (test gate failure, agent can&apos;t make progress,
+                    etc.).
                     <ul>
-                      <li><code>stop</code> — halt the entire run on first failure.</li>
-                      <li><code>skip-task</code> — mark the task failed, move to the next task in this repo.</li>
-                      <li><code>skip-repo</code> — mark the whole repo failed, move to the next repo.</li>
-                      <li><code>retry</code> — re-attempt the task up to <code>max retries</code> times.</li>
+                      <li>
+                        <code>stop</code> — halt the entire run on first failure.
+                      </li>
+                      <li>
+                        <code>skip-task</code> — mark the task failed, move to the next task in this
+                        repo.
+                      </li>
+                      <li>
+                        <code>skip-repo</code> — mark the whole repo failed, move to the next repo.
+                      </li>
+                      <li>
+                        <code>retry</code> — re-attempt the task up to <code>max retries</code>{" "}
+                        times.
+                      </li>
                     </ul>
                   </InfoBadge>
                 </span>
@@ -535,11 +544,10 @@ export function StartRunForm() {
                 <span className="field-label">
                   max retries
                   <InfoBadge label="About retries">
-                    How many additional attempts the executor gets when a
-                    task fails. Applies to both <code>retry</code> on-failure
-                    mode and the executor&apos;s built-in test-gate retry
-                    (when the agent makes changes but tests fail, it sees
-                    the failing output and tries again). <code>1</code>
+                    How many additional attempts the executor gets when a task fails. Applies to
+                    both <code>retry</code> on-failure mode and the executor&apos;s built-in
+                    test-gate retry (when the agent makes changes but tests fail, it sees the
+                    failing output and tries again). <code>1</code>
                     means up to 2 total attempts; <code>0</code> = no retries.
                   </InfoBadge>
                 </span>
@@ -555,15 +563,22 @@ export function StartRunForm() {
                 <span className="field-label">
                   test gate
                   <InfoBadge label="About the test gate">
-                    Whether to run the repo&apos;s test command after each
-                    task and only commit if it passes.
+                    Whether to run the repo&apos;s test command after each task and only commit if
+                    it passes.
                     <ul>
-                      <li><code>required</code> — must pass to commit. Safest, slowest.</li>
-                      <li><code>skip</code> — commit edits without testing. Fastest, riskiest.</li>
-                      <li><code>per-repo</code> — use the <code>testGate</code> field set per-repo in the manifest.</li>
+                      <li>
+                        <code>required</code> — must pass to commit. Safest, slowest.
+                      </li>
+                      <li>
+                        <code>skip</code> — commit edits without testing. Fastest, riskiest.
+                      </li>
+                      <li>
+                        <code>per-repo</code> — use the <code>testGate</code> field set per-repo in
+                        the manifest.
+                      </li>
                     </ul>
-                    The test command is auto-detected from the stack profile
-                    (e.g. <code>pnpm test</code> for jsts).
+                    The test command is auto-detected from the stack profile (e.g.{" "}
+                    <code>pnpm test</code> for jsts).
                   </InfoBadge>
                 </span>
                 <select
@@ -580,11 +595,9 @@ export function StartRunForm() {
                 <span className="field-label">
                   test timeout (ms)
                   <InfoBadge label="About test timeout">
-                    How long the test command can run before being killed
-                    and treated as a failure. Defaults to 5 minutes
-                    (<code>300000</code> ms). Bump higher for slow integration
-                    suites; lower if you want fast feedback on a tight unit
-                    test loop.
+                    How long the test command can run before being killed and treated as a failure.
+                    Defaults to 5 minutes (<code>300000</code> ms). Bump higher for slow integration
+                    suites; lower if you want fast feedback on a tight unit test loop.
                   </InfoBadge>
                 </span>
                 <input
@@ -619,19 +632,15 @@ export function StartRunForm() {
             >
               {submitting ? "starting…" : "Start run"}
             </button>
-            <button
-              className="btn btn-ghost"
-              onClick={() => navigate("/")}
-              disabled={submitting}
-            >
+            <button className="btn btn-ghost" onClick={() => navigate("/")} disabled={submitting}>
               Cancel
             </button>
           </div>
 
           {!authMode && auth && (
             <p className="proposal-hint">
-              No auth mode is selected. Go back to the home page and pick API key or
-              subscription first.
+              No auth mode is selected. Go back to the home page and pick API key or subscription
+              first.
             </p>
           )}
         </section>
