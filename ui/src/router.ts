@@ -3,13 +3,8 @@ import { useEffect, useState } from "react";
 // Hash-based route descriptor. Lightweight enough to avoid pulling in
 // react-router for v0.1's three routes. If the route surface grows past
 // ~6 routes, swap this out.
-export interface RefineParams {
-  kind: "analyze" | "plan";
-  repoPath: string;
-}
-
 export type Route =
-  | { kind: "home"; refine?: RefineParams }
+  | { kind: "home" }
   | { kind: "new-run" }
   | { kind: "run-dashboard"; runId: string };
 
@@ -29,14 +24,16 @@ export function parseHash(hash: string): Route {
     return { kind: "run-dashboard", runId: runMatch[1] };
   }
 
+  // The home scanner that refine deep-links used to target was removed in the
+  // IA consolidation; a valid refine link now opens the run surface, where
+  // analysis happens inline per repo.
   const refineKind = params.get("refine");
   const refinePath = params.get("repoPath");
-  const refine: RefineParams | undefined =
-    (refineKind === "analyze" || refineKind === "plan") && refinePath
-      ? { kind: refineKind, repoPath: refinePath }
-      : undefined;
+  if ((refineKind === "analyze" || refineKind === "plan") && refinePath) {
+    return { kind: "new-run" };
+  }
 
-  return refine ? { kind: "home", refine } : { kind: "home" };
+  return { kind: "home" };
 }
 
 export function useHashRoute(): Route {

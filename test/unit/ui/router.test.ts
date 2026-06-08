@@ -31,15 +31,11 @@ describe("parseHash", () => {
     expect(parseHash("#/runs/01HKQR3Z8MAAAAAAAAAAAAA")).toEqual({ kind: "home" }); // too short
   });
 
-  it("extracts refine params on the home route", () => {
-    expect(parseHash("#/?refine=plan&repoPath=/x/foo")).toEqual({
-      kind: "home",
-      refine: { kind: "plan", repoPath: "/x/foo" },
-    });
-    expect(parseHash("#/?refine=analyze&repoPath=/x/bar")).toEqual({
-      kind: "home",
-      refine: { kind: "analyze", repoPath: "/x/bar" },
-    });
+  it("routes valid refine deep-links to the run surface", () => {
+    // The home scanner refine used to target was removed; a valid refine link
+    // now opens the run surface (inline analyze lives there).
+    expect(parseHash("#/?refine=plan&repoPath=/x/foo")).toEqual({ kind: "new-run" });
+    expect(parseHash("#/?refine=analyze&repoPath=/x/bar")).toEqual({ kind: "new-run" });
   });
 
   it("ignores incomplete or invalid refine params", () => {

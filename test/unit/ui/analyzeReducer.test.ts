@@ -18,7 +18,11 @@ describe("flowReducer", () => {
       iteration: 2,
       userNotes: "use webhooks",
     });
-    expect(next[A].analyze).toMatchObject({ phase: "running", repoPath: A, previousNotes: "use webhooks" });
+    expect(next[A].analyze).toMatchObject({
+      phase: "running",
+      repoPath: A,
+      previousNotes: "use webhooks",
+    });
     expect(next[A].analyzeIteration).toBe(2);
     expect(next[A].plan).toEqual({ phase: "idle" }); // re-analyze invalidates plan
   });
@@ -30,7 +34,14 @@ describe("flowReducer", () => {
       type: "analyze-event",
       repoPath: A,
       repoName: "a",
-      event: { type: "done", ok: true, proposalPath: "/p", proposalMarkdown: "# prop", tokensUsed: 5, durationMs: 9 },
+      event: {
+        type: "done",
+        ok: true,
+        proposalPath: "/p",
+        proposalMarkdown: "# prop",
+        tokensUsed: 5,
+        durationMs: 9,
+      },
     });
     s = flowReducer(s, { type: "analyze-start", repoPath: B, repoName: "b", iteration: 1 });
     expect(s[A].analyze.phase).toBe("done"); // A preserved
@@ -38,9 +49,24 @@ describe("flowReducer", () => {
   });
 
   it("appends sdk messages with incrementing ids during a run", () => {
-    let s = flowReducer(withRepo(A), { type: "analyze-start", repoPath: A, repoName: "a", iteration: 1 });
-    s = flowReducer(s, { type: "analyze-event", repoPath: A, repoName: "a", event: { type: "sdk_message", subtype: "tool", summary: "read", ts: 1 } });
-    s = flowReducer(s, { type: "analyze-event", repoPath: A, repoName: "a", event: { type: "sdk_message", subtype: "tool", summary: "grep", ts: 2 } });
+    let s = flowReducer(withRepo(A), {
+      type: "analyze-start",
+      repoPath: A,
+      repoName: "a",
+      iteration: 1,
+    });
+    s = flowReducer(s, {
+      type: "analyze-event",
+      repoPath: A,
+      repoName: "a",
+      event: { type: "sdk_message", subtype: "tool", summary: "read", ts: 1 },
+    });
+    s = flowReducer(s, {
+      type: "analyze-event",
+      repoPath: A,
+      repoName: "a",
+      event: { type: "sdk_message", subtype: "tool", summary: "grep", ts: 2 },
+    });
     const a = s[A].analyze;
     expect(a.phase).toBe("running");
     if (a.phase === "running") {
@@ -50,8 +76,25 @@ describe("flowReducer", () => {
   });
 
   it("marks the proposal approved", () => {
-    let s = flowReducer(withRepo(A), { type: "analyze-start", repoPath: A, repoName: "a", iteration: 1 });
-    s = flowReducer(s, { type: "analyze-event", repoPath: A, repoName: "a", event: { type: "done", ok: true, proposalPath: "/p", proposalMarkdown: "x", tokensUsed: 1, durationMs: 1 } });
+    let s = flowReducer(withRepo(A), {
+      type: "analyze-start",
+      repoPath: A,
+      repoName: "a",
+      iteration: 1,
+    });
+    s = flowReducer(s, {
+      type: "analyze-event",
+      repoPath: A,
+      repoName: "a",
+      event: {
+        type: "done",
+        ok: true,
+        proposalPath: "/p",
+        proposalMarkdown: "x",
+        tokensUsed: 1,
+        durationMs: 1,
+      },
+    });
     s = flowReducer(s, { type: "approve-proposal", repoPath: A, at: "2026-06-08T00:00:00Z" });
     const a = s[A].analyze;
     expect(a.phase === "done" && a.approvedAt).toBe("2026-06-08T00:00:00Z");
