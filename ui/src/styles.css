@@ -2796,3 +2796,64 @@ pre {
   color: var(--ink-mute);
   white-space: nowrap;
 }
+
+/* ---------- resizable panel ---------- */
+.resizable-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.resizable-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.resizable-panel-title {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--ink-faint);
+}
+.resizable-panel-max {
+  font-size: 11px;
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 2px 8px;
+  cursor: pointer;
+  color: var(--ink-mute);
+}
+.resizable-panel-max:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.resizable-panel-body-resizable {
+  resize: both;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+  width: 100%;
+}
+.resizable-panel-overlay {
+  position: fixed;
+  inset: 0;
+  background: oklch(0% 0 0 / 0.45);
+  z-index: 900;
+  display: flex;
+  padding: 24px;
+}
+.resizable-panel-maximized {
+  flex: 1;
+  background: var(--bg-elev);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  padding: 18px 20px;
+  overflow: hidden;
+}
+.resizable-panel-maximized .resizable-panel-body {
+  height: calc(100% - 32px);
+  overflow: auto;
+}
