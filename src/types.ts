@@ -130,6 +130,9 @@ export const RepoEntrySchema = z.object({
   planPath: z.string().optional(),
   taskState: z.array(TaskStateSchema).optional(),
   testGate: z.boolean(),
+  // The branch agent/* work forks off for this repo (chosen on the run
+  // surface; defaults to the repo's current branch). Absent ⇒ no checkout.
+  baseBranch: z.string().optional(),
 });
 export type RepoEntry = z.infer<typeof RepoEntrySchema>;
 

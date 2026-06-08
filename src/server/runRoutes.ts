@@ -49,9 +49,36 @@ const DiscoveredRepoSchema = z.object({
   // undefined). currentBranch/localBranches drive the base-branch picker.
   currentBranch: z.string().optional(),
   localBranches: z.array(z.string()).optional(),
+  baseBranch: z.string().optional(),
   hasApprovedProposal: z.boolean().optional(),
   hasApprovedPlan: z.boolean().optional(),
 });
+
+/** A base-branch switch is only safe on a clean tree, and the target must be
+ *  an existing local branch. Returns a human error string for the first
+ *  offending repo, or null if every repo is fine. Validated up front so a
+ *  doomed run never starts (spec §7 — refuse the auto-checkout, surface inline). */
+export function validateBaseBranches(
+  repos: {
+    name: string;
+    isDirty: boolean;
+    currentBranch?: string;
+    localBranches?: string[];
+    baseBranch?: string;
+  }[],
+): string | null {
+  for (const r of repos) {
+    const base = r.baseBranch;
+    if (!base || base === r.currentBranch) continue; // default / no switch
+    if (r.localBranches && !r.localBranches.includes(base)) {
+      return `${r.name}: base branch "${base}" is not a local branch`;
+    }
+    if (r.isDirty) {
+      return `${r.name}: working tree has uncommitted changes — commit or stash before switching base branch to "${base}"`;
+    }
+  }
+  return null;
+}
 
 const StartRunBody = z.object({
   config: RunConfigSchema,
@@ -162,6 +189,11 @@ export async function handleStartRun(payload: unknown, deps: ServerDeps): Promis
     return { status: 400, body: { error: "invalid body", issues: parsed.error.issues } };
   }
   const { config, authMode, selectedRepos } = parsed.data;
+
+  const baseBranchError = validateBaseBranches(selectedRepos);
+  if (baseBranchError) {
+    return { status: 400, body: { error: baseBranchError } };
+  }
 
   if (authMode === "api" && !deps.originalApiKey) {
     return {

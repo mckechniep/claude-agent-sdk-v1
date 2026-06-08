@@ -5,6 +5,7 @@ import { join } from "node:path";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { EventEmitter } from "node:events";
 import {
+  validateBaseBranches,
   handleStartRun,
   handleStepRun,
   handleSubmitDecisions,
@@ -250,7 +251,9 @@ describe("runRoutes", () => {
       expect(res.status).toBe(202);
       const body = res.body as {
         ok: boolean;
-        pending: { configPatch?: { model?: Record<string, string>; effort?: Record<string, string> } };
+        pending: {
+          configPatch?: { model?: Record<string, string>; effort?: Record<string, string> };
+        };
       };
       expect(body.ok).toBe(true);
       expect(body.pending.configPatch?.model?.execute).toBe("claude-opus-4-8");
@@ -1103,5 +1106,37 @@ describe("runRoutes", () => {
       // Repo .agent dir is untouched.
       await expect(access(join(agentDir, "proposal.md"))).resolves.toBeUndefined();
     });
+  });
+});
+
+describe("validateBaseBranches", () => {
+  const base = {
+    name: "alpha",
+    isDirty: false,
+    currentBranch: "main",
+    localBranches: ["main", "dev"],
+  };
+
+  it("allows an absent baseBranch (defaults to current)", () => {
+    expect(validateBaseBranches([{ ...base }])).toBeNull();
+  });
+
+  it("allows baseBranch equal to current (no switch)", () => {
+    expect(validateBaseBranches([{ ...base, baseBranch: "main" }])).toBeNull();
+  });
+
+  it("allows a clean switch to another local branch", () => {
+    expect(validateBaseBranches([{ ...base, baseBranch: "dev" }])).toBeNull();
+  });
+
+  it("refuses a switch when the tree is dirty", () => {
+    const err = validateBaseBranches([{ ...base, isDirty: true, baseBranch: "dev" }]);
+    expect(err).toMatch(/alpha/);
+    expect(err).toMatch(/uncommitted|stash|commit/i);
+  });
+
+  it("refuses a base branch that is not a local branch", () => {
+    const err = validateBaseBranches([{ ...base, baseBranch: "nope" }]);
+    expect(err).toMatch(/not a local branch/i);
   });
 });

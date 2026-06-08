@@ -139,6 +139,7 @@ async function initManifest(
         lastCommitDate: r.lastCommitDate ?? undefined,
         status: "pending" as const,
         testGate: config.testGate !== "skip",
+        baseBranch: r.baseBranch ?? r.currentBranch,
         ...(await restorePriorState(r.path)),
       })),
     ),
