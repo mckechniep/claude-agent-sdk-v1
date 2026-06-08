@@ -55,6 +55,9 @@ export function StartRunForm() {
   // discards its proposal/plan — re-expanding shows it again. Analyze is fully
   // decoupled from the select-to-run checkbox.
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  // Per-repo chosen base branch (the branch agent/* work forks off). Absent
+  // ⇒ the repo's current branch. Decoupled from select + analyze.
+  const [baseBranches, setBaseBranches] = useState<Map<string, string>>(new Map());
   const flow = useAnalyzeFlow({ mode: authMode, defaults: phaseSelections });
 
   useEffect(() => {
@@ -76,6 +79,7 @@ export function StartRunForm() {
     setScan({ phase: "scanning", repos: [] });
     setSelected(new Set());
     setExpanded(new Set());
+    setBaseBranches(new Map());
     scanRef.current = api.streamDiscover({ path, depth: scanDepth }, (event) => {
       setScan((prev) => {
         switch (event.type) {
@@ -121,6 +125,14 @@ export function StartRunForm() {
     });
   };
 
+  const setBaseBranch = (path: string, branch: string): void => {
+    setBaseBranches((prev) => {
+      const next = new Map(prev);
+      next.set(path, branch);
+      return next;
+    });
+  };
+
   const setPhaseModel = (phase: AgentPhase, model: ModelId): void => {
     setPhaseSelections((prev) => {
       const current = prev[phase];
@@ -135,7 +147,9 @@ export function StartRunForm() {
 
   const onSubmit = async (): Promise<void> => {
     if (!authMode || selected.size === 0 || submitting) return;
-    const selectedRepos = scan.repos.filter((r) => selected.has(r.path));
+    const selectedRepos = scan.repos
+      .filter((r) => selected.has(r.path))
+      .map((r) => ({ ...r, baseBranch: baseBranches.get(r.path) ?? r.currentBranch }));
     if (selectedRepos.length === 0) return;
 
     const effort = buildEffortMap(phaseSelections);
@@ -305,6 +319,33 @@ export function StartRunForm() {
                             className={`repo-flag repo-analyze-badge repo-analyze-${sessionBadge.cls}`}
                           >
                             {sessionBadge.text}
+                          </span>
+                        )}
+                        {r.localBranches.length > 1 && !r.isDirty ? (
+                          <select
+                            className="repo-base-select"
+                            value={baseBranches.get(r.path) ?? r.currentBranch}
+                            onChange={(e) => setBaseBranch(r.path, e.target.value)}
+                            title="base branch — agent work forks off this branch"
+                            aria-label={`base branch for ${r.name}`}
+                          >
+                            {r.localBranches.map((b) => (
+                              <option key={b} value={b}>
+                                {b === r.currentBranch ? `${b} (current)` : b}
+                              </option>
+                            ))}
+                          </select>
+                        ) : (
+                          <span
+                            className="repo-base-static"
+                            title={
+                              r.isDirty
+                                ? "commit or stash to switch base branch"
+                                : "only one local branch"
+                            }
+                          >
+                            ⎇ {r.currentBranch || "—"}
+                            {r.isDirty ? " · dirty" : ""}
                           </span>
                         )}
                         <button
