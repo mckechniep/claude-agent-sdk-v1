@@ -32,6 +32,7 @@ import {
   type RunConfig,
   type RunManifest,
 } from "../types.js";
+import { ensureBranch } from "../lib/git.js";
 import { parsePlan } from "../lib/planParser.js";
 import { BudgetTracker } from "./budget.js";
 import { runWithConcurrency } from "./concurrency.js";
@@ -353,6 +354,24 @@ async function advanceRunning(
     const profile = getStackProfile(repo.stack);
     repo.status = "executing";
     await persist();
+    // Base-branch checkout (#2): fork agent/* branches off the user's chosen
+    // base. Idempotent — no-op when already on it. Start-run validated this is
+    // a clean/safe switch; a checkout failure here fails only this repo.
+    if (repo.baseBranch) {
+      try {
+        await ensureBranch(repo.path, repo.baseBranch);
+      } catch (err) {
+        repo.status = "failed";
+        await persist();
+        await log({
+          ts: nowIso(),
+          type: "repo_failed",
+          repoPath: repo.path,
+          reason: `base-branch checkout failed: ${err instanceof Error ? err.message : String(err)}`,
+        });
+        return;
+      }
+    }
     const tasks = repo.taskState ?? [];
     for (const task of tasks) {
       if (task.status === "completed" || task.status === "skipped") continue;

@@ -231,6 +231,12 @@ export const LogEventSchema = z.discriminatedUnion("type", [
   }),
   z.object({
     ts: z.string().datetime(),
+    type: z.literal("repo_failed"),
+    repoPath: z.string(),
+    reason: z.string(),
+  }),
+  z.object({
+    ts: z.string().datetime(),
     type: z.literal("checkpoint_paused"),
     repoPath: z.string(),
     afterTaskId: z.string(),
