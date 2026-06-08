@@ -1663,6 +1663,58 @@ pre {
   white-space: nowrap;
 }
 
+/* Inline analyze: per-row header (label + live badge + Analyze toggle) and the
+   expandable analyze panel body. */
+.repo-select-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.repo-select-head .repo-select-label {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.repo-analyze-toggle {
+  flex: none;
+  margin-right: 6px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.repo-analyze-badge {
+  flex: none;
+}
+
+.repo-analyze-live {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-color: transparent;
+}
+
+.repo-analyze-done {
+  color: var(--warn);
+  border-color: var(--warn);
+  background: transparent;
+}
+
+.repo-analyze-approved {
+  color: var(--ok);
+  background: var(--ok-soft);
+  border-color: transparent;
+}
+
+.repo-analyze-err {
+  color: var(--err);
+  background: var(--err-soft);
+  border-color: transparent;
+}
+
+.repo-analyze-inline {
+  padding: 2px 10px 12px;
+}
+
 .setting-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);

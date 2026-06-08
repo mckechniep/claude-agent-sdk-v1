@@ -4,6 +4,8 @@ import { navigate } from "./router";
 import { Breadcrumbs } from "./Breadcrumbs";
 import { InfoBadge } from "./InfoBadge";
 import { PhaseModelGrid } from "./PhaseModelGrid";
+import { AnalyzePanel } from "./analyze/AnalyzePanel";
+import { useAnalyzeFlow } from "./analyze/useAnalyzeFlow";
 import { loadDefaults } from "./modelDefaults";
 import type { AutonomyMode, ModelId, OnFailure, RunConfig, TestGate } from "./runTypes";
 import {
@@ -47,6 +49,13 @@ export function StartRunForm() {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const scanRef = useRef<{ close: () => void } | null>(null);
 
+  // Inline analyze: which repo rows have their analyze panel open. The analyze
+  // flow itself is keyed by repoPath in the hook, so collapsing a row never
+  // discards its proposal/plan — re-expanding shows it again. Analyze is fully
+  // decoupled from the select-to-run checkbox.
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const flow = useAnalyzeFlow({ mode: authMode, defaults: phaseSelections });
+
   useEffect(() => {
     void api.authStatus().then((status) => {
       setAuth(status);
@@ -65,6 +74,7 @@ export function StartRunForm() {
     scanRef.current?.close();
     setScan({ phase: "scanning", repos: [] });
     setSelected(new Set());
+    setExpanded(new Set());
     scanRef.current = api.streamDiscover({ path, depth: scanDepth }, (event) => {
       setScan((prev) => {
         switch (event.type) {
@@ -88,6 +98,24 @@ export function StartRunForm() {
       const next = new Set(prev);
       if (next.has(path)) next.delete(path);
       else next.add(path);
+      return next;
+    });
+  };
+
+  const toggleExpanded = (path: string): void => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(path)) next.delete(path);
+      else next.add(path);
+      return next;
+    });
+  };
+
+  const collapse = (path: string): void => {
+    setExpanded((prev) => {
+      if (!prev.has(path)) return prev;
+      const next = new Set(prev);
+      next.delete(path);
       return next;
     });
   };
@@ -160,7 +188,9 @@ export function StartRunForm() {
         <section className="card card-form">
           <div className="card-head">
             <h2>1 · Target & repo selection</h2>
-            <span className="card-sub">scan a directory, pick the repos to run</span>
+            <span className="card-sub">
+              scan a directory, analyze repos inline, pick which to run
+            </span>
           </div>
 
           <div className="scan-form">
@@ -208,32 +238,90 @@ export function StartRunForm() {
             <ul className="repo-select">
               {scan.repos.map((r) => {
                 const isSelected = selected.has(r.path);
+                const f = flow.get(r.path);
+                const isExpanded = expanded.has(r.path);
+                const aPhase = f.analyze.phase;
+                const proposalApproved =
+                  f.analyze.phase === "done" && f.analyze.approvedAt !== null;
+                const planApproved = f.plan.phase === "done" && f.plan.approvedAt !== null;
+                // Live, session-only status of the inline analyze flow. Distinct
+                // from the persisted r.hasApproved* flags below (which come from
+                // the repo's .agent/ dir on disk).
+                const sessionBadge = planApproved
+                  ? { cls: "approved", text: "plan ✓ (this session)" }
+                  : proposalApproved
+                    ? { cls: "approved", text: "proposal ✓ (this session)" }
+                    : aPhase === "running"
+                      ? { cls: "live", text: "analyzing…" }
+                      : aPhase === "done"
+                        ? { cls: "done", text: "proposal ready" }
+                        : aPhase === "error"
+                          ? { cls: "err", text: "analyze failed" }
+                          : null;
+                const toggleLabel = isExpanded
+                  ? "▾ analysis"
+                  : aPhase === "idle"
+                    ? "Analyze ▸"
+                    : "▸ analysis";
                 return (
                   <li key={r.path} className={`repo-select-row ${isSelected ? "on" : ""}`}>
-                    <label className="repo-select-label">
-                      <input
-                        type="checkbox"
-                        checked={isSelected}
-                        onChange={() => toggleRepo(r.path)}
-                      />
-                      <span className="repo-select-name">{r.name}</span>
-                      <span className={`repo-stack repo-stack-${r.stack}`}>{r.stack}</span>
-                      {r.isDirty && (
-                        <span className="repo-flag repo-flag-dirty">dirty</span>
+                    <div className="repo-select-head">
+                      <label className="repo-select-label">
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => toggleRepo(r.path)}
+                        />
+                        <span className="repo-select-name">{r.name}</span>
+                        <span className={`repo-stack repo-stack-${r.stack}`}>{r.stack}</span>
+                        {r.isDirty && (
+                          <span className="repo-flag repo-flag-dirty">dirty</span>
+                        )}
+                        {r.hasApprovedPlan ? (
+                          <span className="repo-flag repo-flag-approved" title="This repo has a valid approved plan — the run will skip analyze and plan and go straight to execution.">
+                            plan ✓ · skips to execute
+                          </span>
+                        ) : r.hasApprovedProposal ? (
+                          <span className="repo-flag repo-flag-proposal" title="This repo has a valid approved proposal — the run will skip analyze and go straight to planning.">
+                            proposal ✓ · skips analyze
+                          </span>
+                        ) : null}
+                        <span className="repo-select-path" title={r.path}>
+                          {r.path}
+                        </span>
+                      </label>
+                      {sessionBadge && (
+                        <span
+                          className={`repo-flag repo-analyze-badge repo-analyze-${sessionBadge.cls}`}
+                        >
+                          {sessionBadge.text}
+                        </span>
                       )}
-                      {r.hasApprovedPlan ? (
-                        <span className="repo-flag repo-flag-approved" title="This repo has a valid approved plan — the run will skip analyze and plan and go straight to execution.">
-                          plan ✓ · skips to execute
-                        </span>
-                      ) : r.hasApprovedProposal ? (
-                        <span className="repo-flag repo-flag-proposal" title="This repo has a valid approved proposal — the run will skip analyze and go straight to planning.">
-                          proposal ✓ · skips analyze
-                        </span>
-                      ) : null}
-                      <span className="repo-select-path" title={r.path}>
-                        {r.path}
-                      </span>
-                    </label>
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-tight repo-analyze-toggle"
+                        onClick={() => toggleExpanded(r.path)}
+                        aria-expanded={isExpanded}
+                        title="Analyze this repo inline — independent of whether it's selected to run."
+                      >
+                        {toggleLabel}
+                      </button>
+                    </div>
+                    {isExpanded && (
+                      <div className="repo-analyze-inline">
+                        <AnalyzePanel
+                          repo={r}
+                          flow={f}
+                          onAnalyze={(notes) => flow.analyze(r, notes)}
+                          onProceed={(notes) => flow.proceedWithAnswers(r, notes)}
+                          onApprove={() => flow.approve(r)}
+                          onPlan={(notes) => flow.plan(r, notes)}
+                          onApprovePlan={(tc) => flow.approvePlan(r, tc)}
+                          onClose={() => collapse(r.path)}
+                          onThoroughnessChange={(t) => flow.setThoroughness(r.path, t)}
+                        />
+                      </div>
+                    )}
                   </li>
                 );
               })}
