@@ -2,6 +2,7 @@ import { readdir, stat, access } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { simpleGit } from "simple-git";
 import { detectStack } from "../stack/detect.js";
+import { readPriorApprovalState } from "../state/repoState.js";
 import type { StackId } from "../types.js";
 
 export interface DiscoveredRepo {
@@ -12,6 +13,19 @@ export interface DiscoveredRepo {
   hasTests: boolean;
   lastCommitDate: string | null;
   isDirty: boolean;
+  // Local git branches + the currently checked-out one. The run surface uses
+  // these to offer a per-repo base-branch picker (default = currentBranch).
+  currentBranch: string;
+  localBranches: string[];
+  // The user-chosen base branch agent/* work forks off. Set by the run surface
+  // in the start-run payload; absent during discovery itself.
+  baseBranch?: string;
+  // Prior orchestrator state (from the repo's .agent/ directory). Lets the
+  // UI badge repos that already have approved work, and lets run bootstrap
+  // skip re-analysis. Flags are validity-checked — a dangling/stale approval
+  // reports false.
+  hasApprovedProposal: boolean;
+  hasApprovedPlan: boolean;
 }
 
 export interface DiscoverParams {
@@ -117,16 +131,34 @@ export async function describeRepo(path: string): Promise<DiscoveredRepo> {
   const hasTests = await hasTestsInRepo(path);
   let lastCommitDate: string | null = null;
   let isDirty = false;
+  let currentBranch = "";
+  let localBranches: string[] = [];
   try {
     const g = simpleGit(path);
     const log = await g.log({ maxCount: 1 });
     lastCommitDate = log.latest?.date ?? null;
     const status = await g.status();
     isDirty = !status.isClean();
+    const branches = await g.branchLocal();
+    currentBranch = branches.current ?? "";
+    localBranches = branches.all;
   } catch {
     // ignore — repo metadata best-effort
   }
-  return { path, name, stack, hasReadme, hasTests, lastCommitDate, isDirty };
+  const priorState = await readPriorApprovalState(path);
+  return {
+    path,
+    name,
+    stack,
+    hasReadme,
+    hasTests,
+    lastCommitDate,
+    isDirty,
+    currentBranch,
+    localBranches,
+    hasApprovedProposal: priorState.proposalApproved,
+    hasApprovedPlan: priorState.planApproved,
+  };
 }
 
 export async function* discoverReposStream(

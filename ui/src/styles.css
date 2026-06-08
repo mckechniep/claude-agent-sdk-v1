@@ -42,8 +42,7 @@ body {
   line-height: 1.5;
   color: var(--ink);
   background:
-    radial-gradient(1200px 600px at 80% -10%, oklch(96% 0.04 260) 0%, transparent 60%),
-    var(--bg);
+    radial-gradient(1200px 600px at 80% -10%, oklch(96% 0.04 260) 0%, transparent 60%), var(--bg);
   -webkit-font-smoothing: antialiased;
 }
 
@@ -131,6 +130,11 @@ pre {
   grid-row: 1;
 }
 
+.card-defaults {
+  grid-column: 2;
+  grid-row: 2;
+}
+
 .card-discover {
   grid-column: 1 / span 2;
   grid-row: 3;
@@ -142,6 +146,7 @@ pre {
   }
   .card-auth,
   .card-runs,
+  .card-defaults,
   .card-discover {
     grid-column: 1;
     grid-row: auto;
@@ -206,7 +211,10 @@ pre {
   cursor: pointer;
   color: inherit;
   font: inherit;
-  transition: border-color var(--t-fast) var(--ease), background var(--t-fast) var(--ease), transform var(--t-fast) var(--ease);
+  transition:
+    border-color var(--t-fast) var(--ease),
+    background var(--t-fast) var(--ease),
+    transform var(--t-fast) var(--ease);
 }
 
 .mode:hover:not(.mode-disabled) {
@@ -293,7 +301,10 @@ pre {
   padding: 9px 16px;
   border-radius: var(--r-sm);
   cursor: pointer;
-  transition: background var(--t-fast) var(--ease), transform var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease);
+  transition:
+    background var(--t-fast) var(--ease),
+    transform var(--t-fast) var(--ease),
+    border-color var(--t-fast) var(--ease);
   border: 1px solid transparent;
 }
 
@@ -334,6 +345,106 @@ pre {
 .btn-ghost:hover {
   border-color: var(--line-strong);
   color: var(--ink);
+}
+
+.btn-danger {
+  background: var(--err-soft);
+  color: var(--err);
+  border-color: var(--err-soft);
+}
+
+.btn-danger:hover:not(:disabled) {
+  background: var(--err);
+  color: var(--bg-elev);
+  border-color: var(--err);
+}
+
+.btn-sm {
+  padding: 7px 12px;
+  font-size: 13px;
+}
+
+/* API key entry — lives directly under the API mode row in the auth card. */
+.keybox {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: -2px 0 2px;
+  padding: 12px;
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--r-md);
+  background: var(--bg);
+}
+
+.keybox-active {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  border-style: solid;
+  border-color: var(--line);
+}
+
+.keybox-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--ink-mute);
+}
+
+.keybox-row {
+  display: flex;
+  gap: 8px;
+}
+
+.keybox-input {
+  flex: 1;
+  font: inherit;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  letter-spacing: 0.04em;
+  padding: 8px 11px;
+  color: var(--ink);
+  background: var(--bg-elev);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-sm);
+  transition:
+    border-color var(--t-fast) var(--ease),
+    box-shadow var(--t-fast) var(--ease);
+}
+
+.keybox-input::placeholder {
+  color: var(--ink-faint);
+}
+
+.keybox-input:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.keybox-persist {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12.5px;
+  color: var(--ink-mute);
+  cursor: pointer;
+}
+
+.keybox-persist input {
+  accent-color: var(--accent);
+}
+
+.keybox-note {
+  font-size: 11.5px;
+  line-height: 1.45;
+  font-family: var(--font-mono);
+}
+
+.keybox-err {
+  margin: 0;
+  font-size: 12.5px;
 }
 
 .action-hint {
@@ -426,8 +537,7 @@ pre {
 }
 
 .stream-row {
-  display: grid;
-  grid-template-columns: 110px 1fr;
+  display: flex;
   align-items: baseline;
   gap: 10px;
   padding: 4px 14px;
@@ -448,7 +558,7 @@ pre {
 }
 
 .stream-pill {
-  justify-self: start;
+  flex-shrink: 0;
   font-size: 10.5px;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -484,6 +594,8 @@ pre {
 }
 
 .stream-summary {
+  flex: 1;
+  min-width: 0;
   color: var(--ink);
   word-break: break-word;
 }
@@ -584,10 +696,15 @@ pre {
 }
 
 .run-meta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 1px;
   font-family: var(--font-mono);
   font-size: 11.5px;
   color: var(--ink-mute);
   text-align: right;
+  white-space: nowrap;
 }
 
 .pill {
@@ -615,6 +732,22 @@ pre {
 .pill-paused {
   background: var(--accent-soft);
   color: var(--accent);
+}
+
+.pill-stopping {
+  background: oklch(96% 0.04 90);
+  color: oklch(48% 0.16 90);
+  animation: pill-stopping-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes pill-stopping-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.6;
+  }
 }
 
 /* ---------- discover form ---------- */
@@ -649,7 +782,9 @@ pre {
   border: 1px solid var(--line);
   border-radius: var(--r-sm);
   color: var(--ink);
-  transition: border-color var(--t-fast) var(--ease), background var(--t-fast) var(--ease);
+  transition:
+    border-color var(--t-fast) var(--ease),
+    background var(--t-fast) var(--ease);
 }
 
 .field-input:hover {
@@ -815,6 +950,16 @@ pre {
   color: var(--err);
 }
 
+.repo-flag-approved {
+  background: var(--ok-soft);
+  color: var(--ok);
+}
+
+.repo-flag-proposal {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
 .repo-path {
   font-family: var(--font-mono);
   font-size: 11.5px;
@@ -975,8 +1120,11 @@ pre {
   line-height: 1.55;
   white-space: pre-wrap;
   word-break: break-word;
-  max-height: 540px;
+  min-height: 200px;
+  height: 540px;
+  max-height: 80vh;
   overflow-y: auto;
+  resize: vertical;
   color: var(--ink);
 }
 
@@ -1022,6 +1170,21 @@ pre {
   background: var(--ok-soft);
 }
 
+.btn-proceed {
+  background: var(--ok);
+  color: #fff;
+  border: 1px solid transparent;
+}
+
+.btn-proceed:hover:not(:disabled) {
+  filter: brightness(1.06);
+}
+
+.btn-proceed:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .proposal-hint {
   margin: 0;
   font-size: 12px;
@@ -1054,6 +1217,59 @@ pre {
 
 .approved-mark {
   font-size: 14px;
+}
+
+/* ---------- iteration scaffolding (shared across analyze + plan) ---------- */
+.iter-badge {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  font-weight: 600;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border: 1px solid oklch(55% 0.18 260 / 0.25);
+  vertical-align: middle;
+}
+
+.iter-notes {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 16px;
+  margin: 12px 16px 0;
+  border-left: 3px solid var(--accent);
+  background: var(--accent-soft);
+  border-radius: 0 var(--r-sm) var(--r-sm) 0;
+}
+
+.iter-notes-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.iter-notes-body {
+  margin: 0;
+  font-family: var(--font-sans);
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--ink);
+  font-style: italic;
+  white-space: pre-wrap;
+}
+
+.iter-notes-hint {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--ink-mute);
 }
 
 /* ---------- plan panel ---------- */
@@ -1141,4 +1357,1620 @@ pre {
   color: var(--ink-faint);
   text-transform: uppercase;
   letter-spacing: 0.1em;
+}
+
+/* ---------- run dashboard + new-run form (phase D) ---------- */
+
+.hdr-back {
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  padding: 2px 8px;
+  margin-right: 8px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--ink-mute);
+  cursor: pointer;
+  transition:
+    border-color var(--t-fast) var(--ease),
+    color var(--t-fast) var(--ease);
+}
+.hdr-back:hover {
+  border-color: var(--line-strong);
+  color: var(--ink);
+}
+
+.card-head-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.btn-tight {
+  padding: 4px 10px !important;
+  font-size: 12.5px !important;
+}
+
+.run-link {
+  background: transparent;
+  border: none;
+  padding: 0;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  text-decoration: none;
+  transition: opacity var(--t-fast) var(--ease);
+}
+.run-link:hover {
+  opacity: 0.7;
+}
+.run-link:hover .run-id {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+/* extended pill palette for all RunStatus / RepoStatus / LoopState values */
+.pill-discovering,
+.pill-selecting,
+.pill-preflight,
+.pill-awaiting-run-confirmation,
+.pill-pending,
+.pill-analyzing,
+.pill-planning,
+.pill-executing {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.pill-awaiting-proposal-approval,
+.pill-awaiting-plan-approval {
+  background: oklch(96% 0.04 90);
+  color: oklch(48% 0.16 90);
+}
+.pill-skipped {
+  background: var(--bg);
+  color: var(--ink-faint);
+  border: 1px solid var(--line);
+}
+.pill-loop-idle {
+  background: var(--bg);
+  color: var(--ink-faint);
+  border: 1px solid var(--line);
+}
+.pill-loop-active {
+  background: var(--ok-soft);
+  color: var(--ok);
+}
+.pill-loop-paused {
+  background: oklch(96% 0.04 90);
+  color: oklch(48% 0.16 90);
+}
+.pill-loop-completed {
+  background: var(--ok-soft);
+  color: var(--ok);
+}
+.pill-loop-failed,
+.pill-loop-aborted {
+  background: var(--err-soft);
+  color: var(--err);
+}
+.pill-loop-stopping {
+  background: oklch(96% 0.04 90);
+  color: oklch(48% 0.16 90);
+  animation: pill-stopping-pulse 1.6s ease-in-out infinite;
+}
+
+.run-header-stopping-hint {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+/* ---------- info badge ---------- */
+.info-badge-wrap {
+  position: relative;
+  display: inline-flex;
+  vertical-align: middle;
+  margin-left: 6px;
+}
+
+.info-badge {
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid var(--line-strong);
+  background: var(--bg-elev);
+  color: var(--ink-mute);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: help;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 120ms ease;
+}
+
+.info-badge:hover,
+.info-badge:focus-visible {
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-color: var(--accent);
+  outline: none;
+}
+
+.info-badge-popover {
+  min-width: 240px;
+  max-width: 340px;
+  padding: 10px 12px;
+  border-radius: 6px;
+  background: var(--ink);
+  color: var(--bg-elev);
+  font-size: 12.5px;
+  line-height: 1.45;
+  text-align: left;
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 400;
+  z-index: 1000;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease;
+  filter: drop-shadow(0 2px 6px oklch(0% 0 0 / 0.12));
+}
+
+/* Portaled popover is positioned inline (position: fixed + top/left from the
+   calculator). Visibility is JS-driven via the -open class because the node
+   lives on document.body, outside the badge's :hover subtree. */
+.info-badge-popover-open {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.info-badge-popover code {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  background: oklch(28% 0.02 250);
+  padding: 1px 4px;
+  border-radius: 3px;
+  color: var(--bg-elev);
+}
+
+.info-badge-popover strong {
+  color: var(--bg);
+}
+
+.info-badge-popover ul {
+  margin: 6px 0 0;
+  padding-left: 16px;
+}
+
+.info-badge-popover li {
+  margin: 2px 0;
+}
+
+/* ---------- liveness indicator ---------- */
+.pill-liveness {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-variant-numeric: tabular-nums;
+}
+
+.pill-liveness-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.pill-liveness-live {
+  background: var(--ok-soft);
+  color: var(--ok);
+}
+.pill-liveness-live .pill-liveness-dot {
+  background: var(--ok);
+  box-shadow: 0 0 0 0 var(--ok);
+  animation: liveness-pulse 1.8s ease-out infinite;
+}
+
+@keyframes liveness-pulse {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in oklch, var(--ok) 60%, transparent);
+  }
+  70% {
+    box-shadow: 0 0 0 6px color-mix(in oklch, var(--ok) 0%, transparent);
+  }
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in oklch, var(--ok) 0%, transparent);
+  }
+}
+
+.pill-liveness-slow {
+  background: oklch(96% 0.04 90);
+  color: oklch(48% 0.16 90);
+}
+.pill-liveness-slow .pill-liveness-dot {
+  background: oklch(60% 0.16 90);
+}
+
+.pill-liveness-offline {
+  background: var(--err-soft);
+  color: var(--err);
+}
+.pill-liveness-offline .pill-liveness-dot {
+  background: var(--err);
+}
+
+.pill-liveness-idle {
+  background: var(--bg);
+  color: var(--ink-faint);
+  border: 1px solid var(--line);
+}
+.pill-liveness-idle .pill-liveness-dot {
+  background: var(--ink-faint);
+}
+
+/* ---------- start-a-run form ---------- */
+
+.form-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.card-form {
+  background: var(--bg-elev);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  padding: 22px 24px;
+}
+
+/* The list lives inside a ResizablePanel which owns the border, scroll, and
+   drag/maximize sizing — so the list itself is just a flow column. */
+.repo-select {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.repo-select-row {
+  border-radius: var(--r-sm);
+  transition: background var(--t-fast) var(--ease);
+}
+.repo-select-row:hover {
+  background: var(--accent-soft);
+}
+.repo-select-row.on {
+  background: var(--accent-soft);
+}
+
+.repo-select-label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.repo-select-label input[type="checkbox"] {
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.repo-select-name {
+  font-weight: 600;
+}
+
+.repo-select-path {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--ink-faint);
+  margin-left: auto;
+  max-width: 60%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Inline analyze: per-row header (label + live badge + Analyze toggle) and the
+   expandable analyze panel body. */
+.repo-select-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.repo-select-head .repo-select-label {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.repo-analyze-toggle {
+  flex: none;
+  margin-right: 6px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.repo-analyze-badge {
+  flex: none;
+}
+
+.repo-analyze-live {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-color: transparent;
+}
+
+.repo-analyze-done {
+  color: var(--warn);
+  border-color: var(--warn);
+  background: transparent;
+}
+
+.repo-analyze-approved {
+  color: var(--ok);
+  background: var(--ok-soft);
+  border-color: transparent;
+}
+
+.repo-analyze-err {
+  color: var(--err);
+  background: var(--err-soft);
+  border-color: transparent;
+}
+
+.repo-analyze-inline {
+  padding: 2px 10px 12px;
+}
+
+.repo-base-select {
+  flex: none;
+  font-size: 11.5px;
+  padding: 2px 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--bg);
+  color: var(--ink-mute);
+  max-width: 160px;
+}
+
+.repo-base-static {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-faint);
+  white-space: nowrap;
+}
+
+.setting-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 14px 18px;
+  margin-top: 4px;
+}
+
+.setting-grid-advanced {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px dashed var(--line);
+}
+
+.field-auth-readout {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.field-readout {
+  padding: 7px 10px;
+  border-radius: var(--r-sm);
+  border: 1px dashed var(--line);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--ink-mute);
+  background: var(--bg);
+}
+
+.btn-disclosure {
+  margin-top: 10px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  align-self: flex-start;
+}
+
+/* Compact models readout (main settings area; full grid lives under Advanced) */
+.models-summary-readout {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  background: none;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  font: inherit;
+  font-family: var(--font-mono);
+  font-size: 0.875rem;
+  cursor: pointer;
+  text-align: left;
+  color: var(--ink);
+  transition:
+    border-color var(--t-fast) var(--ease),
+    background var(--t-fast) var(--ease);
+}
+
+.models-summary-readout:hover,
+.models-summary-readout:focus-visible {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  outline: none;
+}
+
+.models-summary-hint {
+  font-size: 0.75rem;
+  opacity: 0.6;
+  white-space: nowrap;
+}
+
+/* ---------- run dashboard ---------- */
+
+.card-run-header {
+  background: var(--bg-elev);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  padding: 18px 22px;
+}
+
+.card-run-header .card-head {
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+/* Vertical stack of "label: value [?]" rows. Switched from horizontal flex
+   so each row gets its own line + room for the InfoBadge popover to expand
+   without colliding with neighbors. */
+.run-header-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  margin-top: 4px;
+}
+
+.run-header-row {
+  display: grid;
+  grid-template-columns: 96px 1fr;
+  align-items: center;
+  gap: 12px;
+  min-height: 26px;
+}
+
+.run-header-row-label {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--ink-faint);
+  text-align: right;
+}
+
+.run-header-row-value {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+/* Action buttons (Resume / Recover / Stop) sit below the meta rows on
+   their own line — separated visually from the at-a-glance state. */
+.run-header-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--line);
+  width: 100%;
+  min-height: 1px;
+}
+
+.run-header-actions:empty {
+  display: none;
+}
+
+.run-header-budget {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--ink-mute);
+  padding: 3px 9px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+}
+
+/* Spend readout — API cost gets a subtle accent tint (real money); the
+   subscription/notional variant stays neutral so it doesn't read as a charge. */
+.run-header-spend {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--accent);
+  padding: 3px 9px;
+  border: 1px solid var(--accent-soft);
+  background: var(--accent-soft);
+  border-radius: 999px;
+}
+
+.run-header-spend-sub {
+  color: var(--ink-mute);
+  background: transparent;
+  border-color: var(--line);
+}
+
+.run-header-spend-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  opacity: 0.8;
+}
+
+.spend-breakdown {
+  margin: 4px 0 0;
+  padding-left: 16px;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.spend-breakdown code {
+  font-size: 11.5px;
+}
+
+/* Billing-mode switch (paused/failed runs) */
+.card-billing-switch {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px 18px;
+}
+
+.billing-switch-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.billing-switch-eyebrow {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--ink-mute);
+  font-weight: 600;
+}
+
+.billing-switch-options {
+  display: flex;
+  gap: 8px;
+}
+
+.billing-opt {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font: inherit;
+  font-size: 13px;
+  padding: 7px 14px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--line-strong);
+  background: var(--bg-elev);
+  color: var(--ink);
+  cursor: pointer;
+  transition:
+    border-color var(--t-fast) var(--ease),
+    background var(--t-fast) var(--ease);
+}
+
+.billing-opt:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+.billing-opt:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.billing-opt-on {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.billing-opt-tag {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  opacity: 0.75;
+}
+
+.billing-switch-note {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--ink-mute);
+}
+
+.run-header-meta-pill {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ink-mute);
+  padding: 3px 9px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+}
+
+.card-log-tail .card-head {
+  align-items: center;
+  gap: 12px;
+}
+
+/* run-confirmation gate (manifest-level "Confirm & start execution") */
+.card-run-gate {
+  background: linear-gradient(135deg, oklch(98% 0.05 145) 0%, oklch(96% 0.04 90) 100%);
+  border: 1px solid oklch(78% 0.12 145);
+  border-radius: var(--r-lg);
+  padding: 22px 26px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  box-shadow: 0 1px 0 0 oklch(100% 0 0 / 0.6) inset;
+}
+
+.run-gate-head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.run-gate-eyebrow {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--ok);
+  font-weight: 600;
+}
+
+.run-gate-title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--ink);
+  letter-spacing: -0.01em;
+}
+
+.run-gate-summary {
+  margin: 0;
+  font-size: 14px;
+  color: var(--ink);
+}
+
+.run-gate-detail {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--ink-mute);
+  line-height: 1.55;
+}
+
+.run-gate-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 6px;
+}
+
+/* Gate-time model/effort row (run-confirmation gate) */
+.gate-model-row {
+  margin-block: 0.75rem;
+}
+
+/* Re-analyze / re-plan model picker (proposal + plan approval gates in RepoCard) */
+.gate-reanalyze-model {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.8125rem;
+  margin-block: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.gate-reanalyze-model span:first-child {
+  opacity: 0.8;
+  white-space: nowrap;
+}
+
+/* Inline note that appears when the selected model differs from the run's
+   current config — reminds users the change is run-wide. */
+.gate-model-note {
+  opacity: 0.55;
+  font-size: 0.75rem;
+  font-style: italic;
+}
+
+/* Resume variant: amber treatment so a partial-progress gate is unmistakably
+   distinct from a fresh "start execution" gate (which is green). */
+.card-run-gate-resume {
+  background: linear-gradient(135deg, oklch(98% 0.04 85) 0%, oklch(96% 0.05 65) 100%);
+  border-color: oklch(75% 0.13 70);
+}
+
+.card-run-gate-resume .run-gate-eyebrow {
+  color: oklch(55% 0.15 60);
+}
+
+.run-gate-skip-note {
+  display: inline-block;
+  margin-top: 4px;
+  font-size: 12.5px;
+  color: var(--ink-mute);
+}
+
+/* iteration control (analyze + plan panel headers) */
+.analyze-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.iter-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-mute);
+  transition: border-color var(--t-fast) var(--ease);
+}
+.iter-control-normal {
+  border-color: var(--line);
+}
+.iter-control-narrow {
+  border-color: oklch(78% 0.12 90);
+  background: oklch(98% 0.04 90);
+}
+.iter-control-defaults {
+  border-color: oklch(78% 0.12 145);
+  background: oklch(97% 0.04 145);
+}
+
+.iter-control-label strong {
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.iter-control-mode {
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 0 6px;
+  border-radius: 999px;
+}
+.iter-control-mode-normal {
+  color: var(--ink-faint);
+}
+.iter-control-mode-narrow {
+  color: oklch(48% 0.16 90);
+}
+.iter-control-mode-defaults {
+  color: var(--ok);
+}
+
+.iter-control-select {
+  appearance: none;
+  background: transparent;
+  border: none;
+  border-left: 1px solid var(--line);
+  padding-left: 8px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-mute);
+  cursor: pointer;
+}
+.iter-control-select:hover {
+  color: var(--ink);
+}
+
+/* defaults-mode warning inside proposal-feedback */
+.iter-defaults-banner {
+  padding: 10px 12px;
+  border: 1px solid oklch(78% 0.12 145);
+  background: oklch(97% 0.04 145);
+  border-radius: var(--r-sm);
+  font-size: 12.5px;
+  color: oklch(35% 0.14 145);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.iter-defaults-banner strong {
+  color: oklch(28% 0.14 145);
+}
+
+/* ---------- breadcrumbs + cross-links (D nav polish) ---------- */
+
+.breadcrumbs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: -14px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--ink-faint);
+}
+
+.breadcrumb-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.breadcrumb-link {
+  background: transparent;
+  border: none;
+  padding: 2px 4px;
+  margin: -2px -4px;
+  font: inherit;
+  color: var(--ink-mute);
+  cursor: pointer;
+  border-radius: var(--r-sm);
+  transition:
+    color var(--t-fast) var(--ease),
+    background var(--t-fast) var(--ease);
+}
+.breadcrumb-link:hover {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.breadcrumb-current.is-last {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.breadcrumb-sep {
+  color: var(--ink-faint);
+  user-select: none;
+}
+
+.refine-banner {
+  padding: 12px 16px;
+  border: 1px solid oklch(78% 0.12 260);
+  background: oklch(97% 0.04 260);
+  border-radius: var(--r-md);
+  font-size: 13px;
+  color: var(--ink);
+  margin-top: -10px;
+}
+
+.refine-banner code {
+  background: oklch(100% 0 0 / 0.5);
+  padding: 1px 5px;
+  border-radius: var(--r-sm);
+  font-size: 11.5px;
+}
+
+.repo-card-refine {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  color: var(--ink-faint);
+}
+
+.repo-card-refine-label {
+  font-family: var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 10px;
+}
+
+.repo-card-refine-link {
+  background: transparent;
+  border: none;
+  padding: 2px 6px;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--accent);
+  cursor: pointer;
+  border-radius: var(--r-sm);
+  transition: background var(--t-fast) var(--ease);
+}
+.repo-card-refine-link:hover {
+  background: var(--accent-soft);
+}
+
+.run-repo-stub-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.run-repo-stub {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+}
+
+.stream-pill-event {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+/* ---------- failed run banner ---------- */
+.card-failed-banner {
+  background: var(--err-soft);
+  border: 1px solid var(--err);
+  border-radius: var(--r-lg);
+  padding: 18px 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.failed-banner-head {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.failed-banner-eyebrow {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--err);
+  opacity: 0.85;
+}
+
+.failed-banner-title {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.failed-banner-list {
+  list-style: none;
+  margin: 0;
+  padding: 10px 14px;
+  background: var(--bg-elev);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.failed-banner-row {
+  display: grid;
+  /* name | repo-status pill | task-title | reason | optional unreached */
+  grid-template-columns: minmax(80px, auto) auto minmax(120px, auto) 1fr auto;
+  gap: 10px;
+  align-items: baseline;
+  font-size: 13px;
+  min-width: 0;
+}
+
+.failed-banner-repo-status {
+  font-size: 10px;
+  padding: 2px 7px;
+  text-transform: lowercase;
+  letter-spacing: 0.04em;
+}
+
+.failed-banner-unreached {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ink-mute);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  padding: 2px 7px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.failed-banner-name {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.failed-banner-task {
+  color: var(--ink-mute);
+  font-size: 12.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.failed-banner-reason {
+  color: var(--err);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.failed-banner-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+/* ---------- repo card grid (D4) ---------- */
+
+.repo-grid {
+  display: grid;
+  /* Bumped from 320 → 400 so longer task titles + 7-char SHAs fit on one
+     line without wrapping. Still collapses to single-column under ~440px
+     viewports thanks to auto-fill + minmax. */
+  grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
+  gap: 14px;
+}
+
+.repo-card {
+  background: var(--bg-elev);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  transition: border-color var(--t-fast) var(--ease);
+}
+.repo-card.is-current {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.repo-card-completed {
+  border-color: var(--ok);
+}
+.repo-card-failed {
+  border-color: var(--err);
+}
+
+.repo-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.repo-card-head-name {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.repo-card-name {
+  font-weight: 600;
+  font-size: 14.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.repo-card-path {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--ink-faint);
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.repo-card-gate {
+  margin-top: 4px;
+  padding: 10px 12px;
+  background: oklch(98% 0.04 90);
+  border: 1px solid oklch(88% 0.06 90);
+  border-radius: var(--r-sm);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.repo-card-gate-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.repo-card-gate-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: oklch(40% 0.16 90);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.repo-card-tasks {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.repo-card-task {
+  border-radius: var(--r-sm);
+}
+.repo-card-task.is-selected {
+  background: var(--accent-soft);
+}
+.repo-card-task.is-current .repo-card-task-title {
+  font-weight: 600;
+}
+
+.repo-card-task-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  background: transparent;
+  border: none;
+  padding: 6px 8px;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  border-radius: var(--r-sm);
+  transition: background var(--t-fast) var(--ease);
+}
+.repo-card-task-btn:hover {
+  background: var(--accent-soft);
+}
+
+.repo-card-task-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+.dot-pending {
+  background: var(--ink-faint);
+}
+.dot-in_progress {
+  background: var(--accent);
+  animation: pulseSoft 1.2s var(--ease) infinite;
+}
+.dot-completed {
+  background: var(--ok);
+}
+.dot-failed {
+  background: var(--err);
+}
+.dot-skipped {
+  background: var(--line-strong);
+}
+
+@keyframes pulseSoft {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
+  }
+}
+
+.repo-card-task-title {
+  flex: 1;
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.repo-card-task-meta {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.repo-card-task-meta-chip {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-faint);
+}
+
+.repo-card-task-sha {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ok);
+}
+
+.repo-card-failure {
+  margin-top: 6px;
+  padding: 10px 12px;
+  background: var(--err-soft);
+  border: 1px solid oklch(85% 0.08 25);
+  border-radius: var(--r-sm);
+}
+
+.repo-card-failure-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--err);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  display: block;
+  margin-bottom: 6px;
+}
+
+.repo-card-failure-body {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 12px;
+  color: var(--ink);
+}
+
+.repo-card-completed-summary {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--ok);
+}
+
+/* ---------- task foreground panel (D5) ---------- */
+
+.task-foreground {
+  background: var(--bg-elev);
+  border: 1px solid var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+  border-radius: var(--r-lg);
+  padding: 22px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.task-foreground-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.task-foreground-title {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.task-foreground-eyebrow {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--ink-faint);
+}
+
+.task-foreground-heading {
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.task-foreground-meta {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.task-foreground-meta-chip {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--ink-mute);
+  padding: 3px 9px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+}
+
+.task-foreground-sha {
+  color: var(--ok);
+}
+
+.task-foreground-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.task-foreground-section-head {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ink-mute);
+}
+
+.task-foreground-section-summary {
+  cursor: pointer;
+}
+
+.task-foreground-section-fail {
+  padding: 12px;
+  background: var(--err-soft);
+  border-radius: var(--r-sm);
+}
+
+.task-foreground-criteria {
+  margin: 0;
+  padding-left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+}
+
+.task-foreground-fail,
+.task-foreground-test {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+.task-foreground-events {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.task-foreground-event {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12.5px;
+}
+
+.task-foreground-event-time {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-faint);
+}
+
+.task-foreground-event-body {
+  color: var(--ink-mute);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Per-phase model + effort selection grid (StartRunForm) */
+.field-models {
+  grid-column: 1 / -1;
+}
+
+.phase-model-row {
+  display: grid;
+  grid-template-columns: 5.5rem minmax(0, 1fr) minmax(0, 11rem);
+  gap: 0.5rem;
+  align-items: center;
+  margin-block: 0.375rem;
+}
+
+.phase-model-name {
+  font-size: 0.8125rem;
+  opacity: 0.75;
+  text-transform: lowercase;
+  letter-spacing: 0.02em;
+}
+
+.btn-reset-models {
+  margin-top: 0.5rem;
+  justify-self: start;
+  font-size: 0.8125rem;
+}
+
+@media (max-width: 720px) {
+  .phase-model-row {
+    grid-template-columns: 1fr;
+    gap: 0.25rem;
+  }
+}
+
+/* ---------- run warming-up notice ---------- */
+
+.run-warming-up {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+}
+
+.warming-pulse {
+  width: 0.75rem;
+  height: 0.75rem;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: warming-pulse 1.6s ease-in-out infinite;
+  flex-shrink: 0;
+}
+
+@keyframes warming-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.35;
+    transform: scale(0.8);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .warming-pulse {
+    animation: none;
+  }
+}
+
+/* ---------- runs list: per-run delete + bulk clear ---------- */
+
+/* The .run grid column was 3-column; the delete button needs a 4th slot. */
+.run {
+  grid-template-columns: auto auto 1fr auto;
+}
+
+.run-delete-btn {
+  opacity: 0;
+  transition: opacity var(--t-fast) var(--ease);
+  font-size: 13px;
+  line-height: 1;
+  padding: 3px 8px !important;
+}
+
+.run:hover .run-delete-btn,
+.run-delete-btn:focus-visible {
+  opacity: 1;
+}
+
+.run-delete-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.run-delete-confirm {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: nowrap;
+}
+
+.run-delete-confirm-label {
+  font-size: 12px;
+  color: var(--ink-mute);
+  white-space: nowrap;
+  cursor: help;
+}
+
+.run-clear-confirm {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: nowrap;
+}
+
+.run-clear-confirm-label {
+  font-size: 12px;
+  color: var(--ink-mute);
+  white-space: nowrap;
+}
+
+/* ---------- resizable panel ---------- */
+.resizable-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.resizable-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.resizable-panel-title {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--ink-faint);
+}
+.resizable-panel-max {
+  font-size: 11px;
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 2px 8px;
+  cursor: pointer;
+  color: var(--ink-mute);
+}
+.resizable-panel-max:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.resizable-panel-body-resizable {
+  resize: both;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+  width: 100%;
+}
+.resizable-panel-overlay {
+  position: fixed;
+  inset: 0;
+  background: oklch(0% 0 0 / 0.45);
+  z-index: 900;
+  display: flex;
+  padding: 24px;
+}
+.resizable-panel-maximized {
+  flex: 1;
+  background: var(--bg-elev);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  padding: 18px 20px;
+  overflow: hidden;
+}
+.resizable-panel-maximized .resizable-panel-body {
+  height: calc(100% - 32px);
+  overflow: auto;
 }

@@ -2,6 +2,7 @@ import { mkdir, readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { RunManifestSchema, StateCorruption, type RunManifest } from "../types.js";
 import { writeAtomic, cleanStaleTmpFiles, isErrnoCode } from "./atomicWrite.js";
+import { migrate } from "./migrations/index.js";
 
 export function defaultStateRoot(): string {
   const home = process.env.HOME ?? process.env.USERPROFILE ?? ".";
@@ -31,7 +32,10 @@ export async function loadManifest(runDir: string): Promise<RunManifest> {
   } catch (err) {
     throw new StateCorruption(path, `JSON parse failed: ${(err as Error).message}`);
   }
-  const result = RunManifestSchema.safeParse(parsed);
+  // Apply forward migrations before validation. Lets us evolve the schema
+  // (rename enum values, restructure fields) without breaking existing runs.
+  const migrated = migrate(parsed);
+  const result = RunManifestSchema.safeParse(migrated);
   if (!result.success) {
     throw new StateCorruption(path, `schema mismatch: ${result.error.message}`);
   }

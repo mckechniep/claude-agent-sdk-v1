@@ -1,9 +1,13 @@
+import type { EffortLevel, LogEvent, ModelId, RunConfig, RunManifest } from "./runTypes";
+
 export type AuthMode = "api" | "subscription";
+export type Thoroughness = "thorough" | "balanced" | "fast";
 
 export interface AuthStatus {
   apiKeyDetected: boolean;
   subscriptionDetected: boolean;
   preferredAuthMode: AuthMode | null;
+  apiKeyPersisted?: boolean;
 }
 
 export interface RunSummary {
@@ -48,6 +52,17 @@ export interface DiscoveredRepo {
   hasTests: boolean;
   lastCommitDate: string | null;
   isDirty: boolean;
+  // Local branches + current branch, from the discover stream. Drives the
+  // per-repo base-branch picker on the run surface.
+  currentBranch: string;
+  localBranches: string[];
+  // The chosen base branch, attached by the run surface before startRun.
+  baseBranch?: string;
+  // Prior orchestrator state from the repo's .agent/ directory (validity-
+  // checked server-side). Approved repos skip the corresponding phases when
+  // a run starts.
+  hasApprovedProposal: boolean;
+  hasApprovedPlan: boolean;
 }
 
 export type DiscoverEvent =
@@ -102,6 +117,92 @@ export type PlanEvent =
     }
   | { type: "error"; ok: false; message: string };
 
+// Run lifecycle types -----------------------------------------------------
+
+export type ProposalAction = "accept" | "reject" | "reanalyze";
+export type PlanAction = "accept" | "reject" | "replan";
+
+// Gate-time config changes — merged into the run's config server-side.
+// Run-wide (not per-repo): changing the analyze model affects every repo
+// that analyzes after the change. Changing execute here affects all
+// subsequent execution, not just the current repo.
+export interface ConfigPatch {
+  model?: {
+    default?: ModelId;
+    analyze?: ModelId;
+    plan?: ModelId;
+    execute?: ModelId;
+  };
+  effort?: {
+    default?: EffortLevel;
+    analyze?: EffortLevel;
+    plan?: EffortLevel;
+    execute?: EffortLevel;
+  };
+}
+
+export interface StepDecisions {
+  proposals?: Record<string, ProposalAction>;
+  plans?: Record<string, PlanAction>;
+  runConfirmed?: boolean;
+  // Optional run-wide config patch applied server-side at decision time.
+  configPatch?: ConfigPatch;
+}
+
+export interface StartRunBody {
+  config: RunConfig;
+  authMode: AuthMode;
+  selectedRepos: DiscoveredRepo[];
+}
+
+export interface StartRunResponse {
+  runId: string;
+  manifest: RunManifest;
+}
+
+export interface ManifestResponse {
+  manifest: RunManifest;
+  loopActive: boolean;
+  // ISO timestamp of the most recent heartbeat, or null if the run has
+  // never had a background loop (e.g. manual autonomy) or pre-heartbeat.
+  lastHeartbeatAt: string | null;
+}
+
+export interface LogReplayResponse {
+  events: LogEvent[];
+  nextByte: number;
+}
+
+export interface StepRunResponse {
+  manifest: RunManifest;
+}
+
+export interface SubmitDecisionsResponse {
+  ok: true;
+  runId: string;
+  pending: StepDecisions;
+}
+
+export interface ResumeRunResponse {
+  runId: string;
+  manifest: RunManifest;
+}
+
+export type StopMode = "soft" | "force";
+
+export interface StopRunResponse {
+  runId: string;
+  mode: StopMode;
+  loopWasActive: boolean;
+  stopped: boolean;
+}
+
+export interface RunLogStreamHandlers {
+  onTail?: (payload: { events: LogEvent[]; nextByte: number }) => void;
+  onIdle?: (payload: { nextByte: number; fileExists: boolean }) => void;
+  onError?: (message: string) => void;
+}
+
 async function json<T>(res: Response): Promise<T> {
   if (!res.ok) {
     const body: unknown = await res.json().catch(() => ({}));
@@ -122,6 +223,16 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ mode }),
     }).then(json<{ preferredAuthMode: AuthMode | null }>),
+  setApiKey: (key: string, persist = true) =>
+    fetch("/api/auth/key", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ key, persist }),
+    }).then(json<{ apiKeyDetected: boolean; apiKeyPersisted: boolean }>),
+  clearApiKey: () =>
+    fetch("/api/auth/key", { method: "DELETE" }).then(
+      json<{ apiKeyDetected: boolean; apiKeyPersisted: boolean }>,
+    ),
   listRuns: () => fetch("/api/runs").then(json<RunsResponse>),
   approveProposal: (args: { repoPath: string; proposalPath: string }) =>
     fetch("/api/analyze/approve", {
@@ -173,13 +284,27 @@ export const api = {
     return { close: () => es.close() };
   },
   streamAnalyze(
-    args: { repoPath: string; mode: AuthMode; userNotes?: string },
+    args: {
+      repoPath: string;
+      mode: AuthMode;
+      userNotes?: string;
+      iteration?: number;
+      thoroughness?: Thoroughness;
+      model?: ModelId;
+      effort?: EffortLevel;
+      finalize?: boolean;
+    },
     onEvent: (event: AnalyzeEvent) => void,
   ): StreamHandle {
     const q = new URLSearchParams({ repoPath: args.repoPath, mode: args.mode });
     if (args.userNotes && args.userNotes.trim().length > 0) {
       q.set("userNotes", args.userNotes);
     }
+    if (args.iteration && args.iteration > 1) q.set("iteration", String(args.iteration));
+    if (args.thoroughness) q.set("thoroughness", args.thoroughness);
+    if (args.model) q.set("model", args.model);
+    if (args.effort) q.set("effort", args.effort);
+    if (args.finalize) q.set("finalize", "true");
     const es = new EventSource(`/api/analyze/stream?${q.toString()}`);
     const safeParse = (msg: MessageEvent<string>): Record<string, unknown> | null => {
       try {
@@ -217,13 +342,25 @@ export const api = {
     return { close: () => es.close() };
   },
   streamPlan(
-    args: { repoPath: string; mode: AuthMode; userNotes?: string },
+    args: {
+      repoPath: string;
+      mode: AuthMode;
+      userNotes?: string;
+      iteration?: number;
+      thoroughness?: Thoroughness;
+      model?: ModelId;
+      effort?: EffortLevel;
+    },
     onEvent: (event: PlanEvent) => void,
   ): StreamHandle {
     const q = new URLSearchParams({ repoPath: args.repoPath, mode: args.mode });
     if (args.userNotes && args.userNotes.trim().length > 0) {
       q.set("userNotes", args.userNotes);
     }
+    if (args.iteration && args.iteration > 1) q.set("iteration", String(args.iteration));
+    if (args.thoroughness) q.set("thoroughness", args.thoroughness);
+    if (args.model) q.set("model", args.model);
+    if (args.effort) q.set("effort", args.effort);
     const es = new EventSource(`/api/plan/stream?${q.toString()}`);
     const safeParse = (msg: MessageEvent<string>): Record<string, unknown> | null => {
       try {
@@ -261,6 +398,125 @@ export const api = {
     });
     return { close: () => es.close() };
   },
+  // Run lifecycle -------------------------------------------------------
+
+  startRun: (body: StartRunBody) =>
+    fetch("/api/run/start", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }).then(json<StartRunResponse>),
+
+  stepRun: (runId: string, decisions?: StepDecisions) =>
+    fetch(`/api/run/${encodeURIComponent(runId)}/step`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(decisions ? { decisions } : {}),
+    }).then(json<StepRunResponse>),
+
+  submitDecisions: (runId: string, decisions: StepDecisions) =>
+    fetch(`/api/run/${encodeURIComponent(runId)}/decisions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(decisions),
+    }).then(json<SubmitDecisionsResponse>),
+
+  getManifest: (runId: string) =>
+    fetch(`/api/run/${encodeURIComponent(runId)}/manifest`).then(json<ManifestResponse>),
+
+  // authMode (optional) switches how the run is billed for its remaining work.
+  resumeRun: (runId: string, authMode?: AuthMode) =>
+    fetch(`/api/run/${encodeURIComponent(runId)}/resume`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(authMode ? { authMode } : {}),
+    }).then(json<ResumeRunResponse>),
+
+  stopRun: (runId: string, mode: StopMode = "soft") =>
+    fetch(`/api/run/${encodeURIComponent(runId)}/stop`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mode }),
+    }).then(json<StopRunResponse>),
+
+  deleteRun: (runId: string) =>
+    fetch(`/api/run/${encodeURIComponent(runId)}`, { method: "DELETE" }).then(
+      json<{ deleted: string }>,
+    ),
+
+  recoverRun: (runId: string) =>
+    fetch(`/api/run/${encodeURIComponent(runId)}/recover`, { method: "POST" }).then(
+      json<{ runId: string; previousStatus: string; lastHeartbeatAt: string | null }>,
+    ),
+
+  retryFromFailure: (runId: string, authMode?: AuthMode) =>
+    fetch(`/api/run/${encodeURIComponent(runId)}/retry-from-failure`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(authMode ? { authMode } : {}),
+    }).then(
+      json<{
+        runId: string;
+        manifest: RunManifest;
+        repoCount: number;
+        taskCount: number;
+        loopStarted: boolean;
+      }>,
+    ),
+
+  getRunLog: (runId: string, fromByte = 0) =>
+    fetch(
+      `/api/run/${encodeURIComponent(runId)}/log?fromByte=${encodeURIComponent(String(fromByte))}`,
+    ).then(json<LogReplayResponse>),
+
+  getRepoArtifacts: (runId: string, repoPath: string) =>
+    fetch(
+      `/api/run/${encodeURIComponent(runId)}/repo-artifacts?repoPath=${encodeURIComponent(repoPath)}`,
+    ).then(
+      json<{
+        proposalMarkdown: string | null;
+        planMarkdown: string | null;
+        proposalApproval: { approvedAt: string; proposalPath: string } | null;
+        planApproval: { approvedAt: string; planPath: string; taskCount: number } | null;
+      }>,
+    ),
+
+  streamRunLog(
+    runId: string,
+    fromByte: number,
+    handlers: RunLogStreamHandlers,
+  ): StreamHandle {
+    const q = new URLSearchParams({ fromByte: String(fromByte) });
+    const es = new EventSource(
+      `/api/run/${encodeURIComponent(runId)}/log/stream?${q.toString()}`,
+    );
+    const safeParse = (msg: MessageEvent<string>): unknown | null => {
+      try {
+        return JSON.parse(msg.data);
+      } catch {
+        return null;
+      }
+    };
+    es.addEventListener("tail", (msg: MessageEvent<string>) => {
+      const data = safeParse(msg) as { events: LogEvent[]; nextByte: number } | null;
+      if (data && handlers.onTail) handlers.onTail(data);
+    });
+    es.addEventListener("idle", (msg: MessageEvent<string>) => {
+      const data = safeParse(msg) as { nextByte: number; fileExists: boolean } | null;
+      if (data && handlers.onIdle) handlers.onIdle(data);
+    });
+    es.addEventListener("error", (msg: Event) => {
+      if (msg instanceof MessageEvent && typeof msg.data === "string") {
+        const data = safeParse(msg) as { message?: string } | null;
+        if (handlers.onError) handlers.onError(String(data?.message ?? "stream error"));
+      } else if (handlers.onError) {
+        handlers.onError("stream disconnected");
+      }
+      es.close();
+    });
+    return { close: () => es.close() };
+  },
+
   streamDiscover(
     args: { path: string; depth?: number; exclude?: string[] },
     onEvent: (event: DiscoverEvent) => void,

@@ -1,6 +1,8 @@
 import { z } from "zod";
 
-export const SCHEMA_VERSION = 1;
+// v2 (2026-05-28): renamed autonomy "batched" → "supervised".
+// Migration: src/state/migrations/index.ts.
+export const SCHEMA_VERSION = 2;
 
 export const AUTH_MODES = ["api", "subscription"] as const;
 export const PHASE_NAMES = ["discover", "analyze", "plan", "execute"] as const;
@@ -8,7 +10,9 @@ export const RUN_STATUSES = [
   "discovering",
   "selecting",
   "preflight",
+  "awaiting-run-confirmation",
   "running",
+  "stopping",
   "paused",
   "completed",
   "failed",
@@ -28,6 +32,18 @@ export const TASK_STATUSES = ["pending", "in_progress", "completed", "failed", "
 export const STACK_IDS = ["jsts", "python", "generic"] as const;
 export const ON_FAILURE_VALUES = ["stop", "skip-task", "skip-repo", "retry"] as const;
 export const TEST_GATE_VALUES = ["required", "skip", "per-repo"] as const;
+export const AUTONOMY_MODES = ["manual", "supervised", "yolo"] as const;
+export const MODEL_IDS = [
+  "claude-sonnet-4-6",
+  "claude-haiku-4-5-20251001",
+  "claude-opus-4-7",
+  "claude-opus-4-8",
+] as const;
+// Reasoning effort forwarded to the SDK. 'xhigh'/'max' are Opus-only at the
+// API level; the schema accepts them everywhere and the SDK errors loudly if
+// a model doesn't support the requested level (preferable to silently
+// downgrading). v0.2: validate per-model from the SDK's supportedEffortLevels.
+export const EFFORT_LEVELS = ["low", "medium", "high", "xhigh", "max"] as const;
 
 export type AuthMode = (typeof AUTH_MODES)[number];
 
@@ -45,10 +61,21 @@ export type OnFailure = (typeof ON_FAILURE_VALUES)[number];
 
 export type TestGate = (typeof TEST_GATE_VALUES)[number];
 
+export type AutonomyMode = (typeof AUTONOMY_MODES)[number];
+
+export type EffortLevel = (typeof EFFORT_LEVELS)[number];
+
+export type ModelId = (typeof MODEL_IDS)[number];
+
+export const ModelIdSchema = z.enum(MODEL_IDS);
+
+export const EffortLevelSchema = z.enum(EFFORT_LEVELS);
+
 export const RunConfigSchema = z.object({
   targetDir: z.string(),
+  autonomy: z.enum(AUTONOMY_MODES).default("supervised"),
   concurrency: z.number().int().positive(),
-  checkpointEvery: z.number(), // Infinity for --yolo, encoded as Number.MAX_SAFE_INTEGER on disk
+  checkpointEvery: z.number(),
   onFailure: z.enum(ON_FAILURE_VALUES),
   maxRetries: z.number().int().nonnegative(),
   maxTokens: z.number().int().positive().optional(),
@@ -56,11 +83,22 @@ export const RunConfigSchema = z.object({
   testGate: z.enum(TEST_GATE_VALUES),
   testTimeoutMs: z.number().int().positive(),
   model: z.object({
-    default: z.string(),
-    analyze: z.string().optional(),
-    plan: z.string().optional(),
-    execute: z.string().optional(),
+    default: ModelIdSchema,
+    analyze: ModelIdSchema.optional(),
+    plan: ModelIdSchema.optional(),
+    execute: ModelIdSchema.optional(),
   }),
+  // Per-phase reasoning effort. Optional at every level: an unset phase falls
+  // back to effort.default; an unset default means "let the SDK/model decide"
+  // (the effort key is omitted from the SDK call entirely).
+  effort: z
+    .object({
+      default: EffortLevelSchema.optional(),
+      analyze: EffortLevelSchema.optional(),
+      plan: EffortLevelSchema.optional(),
+      execute: EffortLevelSchema.optional(),
+    })
+    .optional(),
   include: z.array(z.string()).optional(),
   exclude: z.array(z.string()).optional(),
 });
@@ -84,24 +122,61 @@ export const RepoEntrySchema = z.object({
   path: z.string(),
   name: z.string(),
   stack: z.enum(STACK_IDS),
+  hasReadme: z.boolean().optional(),
+  hasTests: z.boolean().optional(),
+  lastCommitDate: z.string().optional(),
   status: z.enum(REPO_STATUSES),
   proposalPath: z.string().optional(),
   planPath: z.string().optional(),
   taskState: z.array(TaskStateSchema).optional(),
   testGate: z.boolean(),
+  // The branch agent/* work forks off for this repo (chosen on the run
+  // surface; defaults to the repo's current branch). Absent ⇒ no checkout.
+  baseBranch: z.string().optional(),
 });
 export type RepoEntry = z.infer<typeof RepoEntrySchema>;
+
+export const UlidString = z.string().regex(/^[0-9A-HJKMNP-TV-Z]{26}$/, "expected a ULID");
+
+// Per-model usage + cost, sourced from the SDK result message's `modelUsage`
+// (the SDK prices each model itself, so this is not a local estimate). Keyed
+// by model id in BudgetState.byModel.
+export const ModelCostSchema = z.object({
+  inputTokens: z.number().int().nonnegative(),
+  outputTokens: z.number().int().nonnegative(),
+  cacheReadInputTokens: z.number().int().nonnegative(),
+  cacheCreationInputTokens: z.number().int().nonnegative(),
+  costUsd: z.number().nonnegative(),
+});
+export type ModelCost = z.infer<typeof ModelCostSchema>;
+
+// Tokens + dollars attributed to a single auth mode within a run.
+export const AuthSpendSchema = z.object({
+  tokensUsed: z.number().int().nonnegative(),
+  costUsd: z.number().nonnegative(),
+});
+export type AuthSpend = z.infer<typeof AuthSpendSchema>;
 
 export const BudgetStateSchema = z.object({
   tokensUsed: z.number().int().nonnegative(),
   startedAt: z.string().datetime(),
   estimatedTotalTokens: z.number().int().nonnegative().optional(),
+  // SDK-reported dollar cost. In API mode this is what you're billed; in
+  // subscription mode it is the notional API-equivalent (or 0 if the SDK does
+  // not price subscription runs) — the UI labels it accordingly.
   costUsd: z.number().nonnegative().optional(),
+  // Per-model breakdown so mixed-model runs (e.g. haiku analyze + opus execute)
+  // show where the cost actually went, rather than one blended number.
+  byModel: z.record(z.string(), ModelCostSchema).optional(),
+  // Per-auth-mode tally. A run can be billed differently across its life (e.g.
+  // started on subscription, resumed on api), so spend is attributed to the
+  // auth mode active when it was incurred — keyed by "api" | "subscription".
+  byAuthMode: z.record(z.enum(AUTH_MODES), AuthSpendSchema).optional(),
 });
 export type BudgetState = z.infer<typeof BudgetStateSchema>;
 
 export const RunManifestSchema = z.object({
-  runId: z.string().regex(/^[0-9A-HJKMNP-TV-Z]{26}$/, "expected a ULID"),
+  runId: UlidString,
   createdAt: z.string().datetime(),
   authMode: z.enum(AUTH_MODES),
   config: RunConfigSchema,
@@ -116,7 +191,7 @@ export const LogEventSchema = z.discriminatedUnion("type", [
   z.object({
     ts: z.string().datetime(),
     type: z.literal("run_started"),
-    runId: z.string().regex(/^[0-9A-HJKMNP-TV-Z]{26}$/, "expected a ULID"),
+    runId: UlidString,
   }),
   z.object({
     ts: z.string().datetime(),
@@ -156,6 +231,12 @@ export const LogEventSchema = z.discriminatedUnion("type", [
   }),
   z.object({
     ts: z.string().datetime(),
+    type: z.literal("repo_failed"),
+    repoPath: z.string(),
+    reason: z.string(),
+  }),
+  z.object({
+    ts: z.string().datetime(),
     type: z.literal("checkpoint_paused"),
     repoPath: z.string(),
     afterTaskId: z.string(),
@@ -179,8 +260,107 @@ export const LogEventSchema = z.discriminatedUnion("type", [
     status: z.enum(["completed", "failed"]),
     durationMs: z.number().int().nonnegative(),
   }),
+  z.object({
+    ts: z.string().datetime(),
+    type: z.literal("run_loop_started"),
+    runId: UlidString,
+  }),
+  z.object({
+    ts: z.string().datetime(),
+    type: z.literal("run_loop_paused"),
+    runId: UlidString,
+  }),
+  z.object({
+    ts: z.string().datetime(),
+    type: z.literal("run_loop_completed"),
+    runId: UlidString,
+  }),
+  z.object({
+    ts: z.string().datetime(),
+    type: z.literal("run_loop_failed"),
+    runId: UlidString,
+  }),
+  z.object({
+    ts: z.string().datetime(),
+    type: z.literal("run_loop_aborted"),
+    runId: UlidString,
+  }),
+  z.object({
+    ts: z.string().datetime(),
+    type: z.literal("run_loop_stop_requested"),
+    runId: UlidString,
+    mode: z.enum(["soft", "force"]),
+  }),
+  z.object({
+    ts: z.string().datetime(),
+    type: z.literal("run_loop_force_aborted"),
+    runId: UlidString,
+    duringStep: z.boolean(),
+  }),
+  z.object({
+    ts: z.string().datetime(),
+    type: z.literal("run_recovered_from_crash"),
+    runId: UlidString,
+    // Status the run was stuck in when the sweep found it — useful when
+    // debugging which manifest states tend to leak across crashes.
+    previousStatus: z.enum(RUN_STATUSES),
+    // ISO timestamp of the last heartbeat we saw, or null if the run never
+    // had one (e.g. crashed before the first beat fired).
+    lastHeartbeatAt: z.string().datetime().nullable(),
+  }),
+  z.object({
+    ts: z.string().datetime(),
+    type: z.literal("run_retried_from_failure"),
+    runId: UlidString,
+    // How many repos and tasks were reset back to a retryable state.
+    repoCount: z.number().int().nonnegative(),
+    taskCount: z.number().int().nonnegative(),
+  }),
+  z.object({
+    ts: z.string().datetime(),
+    type: z.literal("run_loop_awaiting_decision"),
+    runId: UlidString,
+    status: z.enum(RUN_STATUSES),
+  }),
+  z.object({
+    ts: z.string().datetime(),
+    type: z.literal("run_loop_error"),
+    runId: UlidString,
+    message: z.string(),
+  }),
 ]);
 export type LogEvent = z.infer<typeof LogEventSchema>;
+
+// ---------------------------------------------------------------------------
+// UI projection types
+//
+// These are not wire schemas — they're the shape the run-dashboard reducer
+// produces from a manifest snapshot + a tail of LogEvents. The reducer lives
+// in ui/src/runReducer.ts; types live here so server-side helpers (e.g. tests
+// that construct a fixture state) can share them.
+// ---------------------------------------------------------------------------
+
+export type LoopState = "idle" | "active" | "paused" | "completed" | "failed" | "aborted";
+
+export interface RunViewModel {
+  runId: string;
+  manifest: RunManifest;
+  loopState: LoopState;
+  currentRepoPath: string | null;
+  currentTaskId: string | null;
+  recentEvents: LogEvent[];
+  eventsByRepo: Record<string, LogEvent[]>;
+  eventsByTask: Record<string, LogEvent[]>;
+  lastEventTs: string | null;
+  byteCursor: number;
+  manifestFetchedAt: string | null;
+}
+
+// Discriminated update payload accepted by the reducer.
+export type RunUpdate =
+  | { kind: "event"; event: LogEvent }
+  | { kind: "manifest"; manifest: RunManifest; fetchedAt: string }
+  | { kind: "bookmark"; byteCursor: number };
 
 export class StateCorruption extends Error {
   constructor(

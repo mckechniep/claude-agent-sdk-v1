@@ -1,5 +1,10 @@
-import { appendFile, readFile } from "node:fs/promises";
+import { appendFile, readFile, stat } from "node:fs/promises";
+import { join } from "node:path";
 import { LogEventSchema, type LogEvent } from "../types.js";
+
+export function runLogPath(stateRoot: string, runId: string): string {
+  return join(stateRoot, runId, "run-log.jsonl");
+}
 
 // Single-event JSON lines (~200 bytes typical) are well under PIPE_BUF (4096),
 // so concurrent appendFile calls are atomic at the line level on POSIX. The
@@ -34,4 +39,54 @@ export async function readLogEvents(path: string): Promise<LogEvent[]> {
     }
   }
   return out;
+}
+
+export interface LogTail {
+  events: LogEvent[];
+  nextByte: number;
+  fileExists: boolean;
+}
+
+// Byte-cursored replay for HTTP callers. Returns only events whose terminating
+// newline falls within [fromByte, EOF); nextByte is the offset of the byte
+// *after* the last consumed newline (or fromByte if no newline was seen yet).
+// This makes the cursor resync-safe across partial appends and torn writes.
+export async function readLogTailFromByte(path: string, fromByte: number): Promise<LogTail> {
+  let size: number;
+  try {
+    const s = await stat(path);
+    size = s.size;
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+      return { events: [], nextByte: fromByte, fileExists: false };
+    }
+    throw err;
+  }
+
+  if (fromByte >= size) {
+    return { events: [], nextByte: fromByte, fileExists: true };
+  }
+
+  const start = Math.max(0, fromByte);
+  const buf = await readFile(path);
+  const tail = buf.subarray(start, size);
+  const lastNewline = tail.lastIndexOf(0x0a /* \n */);
+  if (lastNewline < 0) {
+    // No complete line yet beyond fromByte — caller should poll again.
+    return { events: [], nextByte: fromByte, fileExists: true };
+  }
+
+  const complete = tail.subarray(0, lastNewline).toString("utf8");
+  const events: LogEvent[] = [];
+  for (const line of complete.split("\n")) {
+    if (!line.trim()) continue;
+    try {
+      const parsed = JSON.parse(line);
+      const validated = LogEventSchema.safeParse(parsed);
+      if (validated.success) events.push(validated.data);
+    } catch {
+      // skip malformed lines (last-line-corruption tolerance)
+    }
+  }
+  return { events, nextByte: start + lastNewline + 1, fileExists: true };
 }

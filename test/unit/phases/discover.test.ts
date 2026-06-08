@@ -4,6 +4,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { simpleGit } from "simple-git";
 import { discoverRepos } from "../../../src/phases/discover.js";
+import {
+  writeProposal,
+  writeProposalApproval,
+  writePlan,
+  writePlanApproval,
+} from "../../../src/state/repoState.js";
 
 async function makeGitRepo(parent: string, name: string, files: Record<string, string> = {}) {
   const dir = join(parent, name);
@@ -61,6 +67,16 @@ describe("discoverRepos", () => {
     expect(repos.map((r) => r.name)).toEqual(["alpha"]);
   });
 
+  it("reports current branch and local branches", async () => {
+    const dir = await makeGitRepo(root, "alpha", { "package.json": "{}" });
+    await simpleGit(dir).checkoutLocalBranch("feature/x");
+    const repos = await discoverRepos({ targetDir: root, depth: 2 });
+    const r = repos[0]!;
+    expect(r.currentBranch).toBe("feature/x");
+    expect(r.localBranches).toContain("feature/x");
+    expect(r.localBranches).toContain(r.currentBranch);
+  });
+
   it("reports hasReadme and hasTests flags", async () => {
     await makeGitRepo(root, "alpha", { "README.md": "# x", "package.json": "{}" });
     await mkdir(join(root, "alpha", "test"), { recursive: true });
@@ -68,5 +84,52 @@ describe("discoverRepos", () => {
     const repos = await discoverRepos({ targetDir: root, depth: 2 });
     expect(repos[0]?.hasReadme).toBe(true);
     expect(repos[0]?.hasTests).toBe(true);
+  });
+
+  it("reports false approval flags for repos without .agent state", async () => {
+    await makeGitRepo(root, "alpha", { "package.json": "{}" });
+    const repos = await discoverRepos({ targetDir: root, depth: 2 });
+    expect(repos[0]?.hasApprovedProposal).toBe(false);
+    expect(repos[0]?.hasApprovedPlan).toBe(false);
+  });
+
+  it("surfaces prior approval state for repos with .agent artifacts", async () => {
+    const alphaDir = await makeGitRepo(root, "alpha", { "package.json": "{}" });
+
+    // Set up a valid proposal approval.
+    const proposalPath = await writeProposal(alphaDir, "# Proposal");
+    await writeProposalApproval(alphaDir, proposalPath);
+
+    // Set up a valid plan approval with two tasks.
+    const planMd = `# Plan — alpha
+
+## Tasks
+
+### task: aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa
+**Title:** Task one
+
+**Acceptance criteria:**
+- criterion a
+
+**Dependencies:** none
+**Estimated effort:** small
+
+---
+
+### task: bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb
+**Title:** Task two
+
+**Acceptance criteria:**
+- criterion b
+
+**Dependencies:** aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa
+**Estimated effort:** small
+`;
+    const planPath = await writePlan(alphaDir, planMd);
+    await writePlanApproval(alphaDir, planPath, 2);
+
+    const repos = await discoverRepos({ targetDir: root, depth: 2 });
+    expect(repos[0]?.hasApprovedProposal).toBe(true);
+    expect(repos[0]?.hasApprovedPlan).toBe(true);
   });
 });

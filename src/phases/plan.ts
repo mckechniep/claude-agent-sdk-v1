@@ -1,10 +1,12 @@
 import { runQuery, runQueryStream, type QueryEvent } from "../sdk/query.js";
 import type { BudgetTracker } from "../orchestrator/budget.js";
 import { renderPlanPrompt } from "../sdk/prompts/plan.js";
+import type { Thoroughness } from "../sdk/prompts/iteration.js";
 import { readPlan, writePlan } from "../state/repoState.js";
 import { parsePlan } from "../lib/planParser.js";
 import type { StackProfile } from "../stack/profiles/types.js";
 import type { TaskState } from "../types.js";
+import { PHASE_AGENTS } from "../orchestrator/phaseAgents.js";
 
 const AVG_TOKENS_PER_EXECUTE = 30_000;
 const AVG_DURATION_MS_PER_EXECUTE = 60_000;
@@ -16,8 +18,12 @@ export interface PlanParams {
   proposalMarkdown: string;
   tracker: BudgetTracker;
   userNotes?: string;
+  iteration?: number;
+  thoroughness?: Thoroughness;
   model?: string;
+  effort?: string;
   queryFn?: Parameters<typeof runQuery>[0]["queryFn"];
+  abortSignal?: AbortSignal;
 }
 
 export interface PlanResult {
@@ -31,9 +37,7 @@ export interface PlanResult {
   durationMs: number;
 }
 
-export async function* planStream(
-  params: PlanParams,
-): AsyncGenerator<QueryEvent, PlanResult> {
+export async function* planStream(params: PlanParams): AsyncGenerator<QueryEvent, PlanResult> {
   // Pick up the prior plan if one exists — gives the model context for
   // refinement, lets it preserve task UUIDs across iterations, and avoids
   // the model getting confused by a same-named file in .agent/.
@@ -46,15 +50,19 @@ export async function* planStream(
     proposalMarkdown: params.proposalMarkdown,
     userNotes: params.userNotes,
     previousPlan,
+    iteration: params.iteration,
+    thoroughness: params.thoroughness,
   });
 
   const gen = runQueryStream({
     prompt,
-    allowedTools: ["Read"],
+    allowedTools: PHASE_AGENTS.plan.tools,
     cwd: params.repoPath,
     tracker: params.tracker,
     model: params.model,
+    effort: params.effort,
     queryFn: params.queryFn,
+    abortSignal: params.abortSignal,
   });
 
   let finalText = "";

@@ -1,8 +1,10 @@
 import { runQuery, runQueryStream, type QueryEvent } from "../sdk/query.js";
 import type { BudgetTracker } from "../orchestrator/budget.js";
 import { renderAnalyzePrompt } from "../sdk/prompts/analyze.js";
+import type { Thoroughness } from "../sdk/prompts/iteration.js";
 import { readProposal, writeProposal } from "../state/repoState.js";
 import type { StackProfile } from "../stack/profiles/types.js";
+import { PHASE_AGENTS } from "../orchestrator/phaseAgents.js";
 
 export interface AnalyzeParams {
   repoPath: string;
@@ -13,8 +15,13 @@ export interface AnalyzeParams {
   lastCommitDate: string | null;
   tracker: BudgetTracker;
   userNotes?: string;
+  iteration?: number;
+  thoroughness?: Thoroughness;
   model?: string;
+  effort?: string;
+  finalize?: boolean;
   queryFn?: Parameters<typeof runQuery>[0]["queryFn"];
+  abortSignal?: AbortSignal;
 }
 
 export interface AnalyzeResult {
@@ -41,15 +48,20 @@ export async function* analyzeStream(
     lastCommitDate: params.lastCommitDate,
     userNotes: params.userNotes,
     previousProposal,
+    iteration: params.iteration,
+    thoroughness: params.thoroughness,
+    finalize: params.finalize,
   });
 
   const gen = runQueryStream({
     prompt,
-    allowedTools: ["Read", "Bash"],
+    allowedTools: PHASE_AGENTS.analyze.tools,
     cwd: params.repoPath,
     tracker: params.tracker,
     model: params.model,
+    effort: params.effort,
     queryFn: params.queryFn,
+    abortSignal: params.abortSignal,
   });
 
   let finalText = "";

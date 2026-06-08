@@ -12,6 +12,7 @@ const baseManifest = (runId: string): RunManifest => ({
   authMode: "api",
   config: {
     targetDir: "/tmp/x",
+    autonomy: "supervised",
     concurrency: 1,
     checkpointEvery: 1,
     onFailure: "skip-repo",

@@ -1,17 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import {
-  api,
-  type AnalyzeEvent,
-  type AuthMode,
-  type AuthStatus,
-  type DiscoveredRepo,
-  type DiscoverEvent,
-  type PlanEvent,
-  type RunsResponse,
-  type SmokeEvent,
-} from "./api";
+import { api, type AuthMode, type AuthStatus, type RunsResponse, type SmokeEvent } from "./api";
+import { navigate } from "./router";
+import { Breadcrumbs } from "./Breadcrumbs";
+import { DefaultsPanel } from "./DefaultsPanel";
+import { loadDefaults, saveDefaults } from "./modelDefaults";
+import type { PhaseSelections } from "./modelConfig";
 
-type LoadState<T> = { phase: "loading" } | { phase: "ok"; data: T } | { phase: "err"; error: string };
+type LoadState<T> =
+  | { phase: "loading" }
+  | { phase: "ok"; data: T }
+  | { phase: "err"; error: string };
 
 function useAsync<T>(fn: () => Promise<T>, deps: unknown[] = []): [LoadState<T>, () => void] {
   const [state, setState] = useState<LoadState<T>>({ phase: "loading" });
@@ -19,7 +17,9 @@ function useAsync<T>(fn: () => Promise<T>, deps: unknown[] = []): [LoadState<T>,
     setState({ phase: "loading" });
     fn()
       .then((data) => setState({ phase: "ok", data }))
-      .catch((err: unknown) => setState({ phase: "err", error: err instanceof Error ? err.message : String(err) }));
+      .catch((err: unknown) =>
+        setState({ phase: "err", error: err instanceof Error ? err.message : String(err) }),
+      );
   }, deps);
   useEffect(reload, [reload]);
   return [state, reload];
@@ -50,102 +50,24 @@ type SmokeState =
     }
   | { phase: "error"; message: string; messages: MessageEntry[] };
 
-type DiscoverState =
-  | { phase: "idle" }
-  | {
-      phase: "scanning";
-      path: string;
-      depth: number;
-      elapsedMs: number;
-      repos: DiscoveredRepo[];
-    }
-  | {
-      phase: "done";
-      path: string;
-      depth: number;
-      count: number;
-      durationMs: number;
-      repos: DiscoveredRepo[];
-    }
-  | { phase: "error"; message: string; repos: DiscoveredRepo[] };
-
-type AnalyzeState =
-  | { phase: "idle" }
-  | {
-      phase: "running";
-      repoPath: string;
-      repoName: string;
-      elapsedMs: number;
-      messages: MessageEntry[];
-      previousNotes?: string;
-    }
-  | {
-      phase: "done";
-      repoPath: string;
-      repoName: string;
-      messages: MessageEntry[];
-      proposalPath: string;
-      proposalMarkdown: string;
-      tokensUsed: number;
-      durationMs: number;
-      approvedAt: string | null;
-    }
-  | {
-      phase: "error";
-      repoPath: string;
-      repoName: string;
-      message: string;
-      messages: MessageEntry[];
-    };
-
-type PlanState =
-  | { phase: "idle" }
-  | {
-      phase: "running";
-      repoPath: string;
-      repoName: string;
-      elapsedMs: number;
-      messages: MessageEntry[];
-    }
-  | {
-      phase: "done";
-      repoPath: string;
-      repoName: string;
-      messages: MessageEntry[];
-      planPath: string;
-      planMarkdown: string;
-      taskCount: number;
-      estimatedTokens: number;
-      estimatedDurationMs: number;
-      tokensUsed: number;
-      durationMs: number;
-      approvedAt: string | null;
-    }
-  | {
-      phase: "error";
-      repoPath: string;
-      repoName: string;
-      message: string;
-      messages: MessageEntry[];
-    };
-
 export default function App() {
   const [authState, reloadAuth] = useAsync<AuthStatus>(() => api.authStatus(), []);
   const [runsState, reloadRuns] = useAsync<RunsResponse>(() => api.listRuns(), []);
   const [chosenMode, setChosenMode] = useState<AuthMode | null>(null);
+  const [confirmingDelete, setConfirmingDelete] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [confirmingClear, setConfirmingClear] = useState(false);
+  const [clearError, setClearError] = useState<string | null>(null);
   const [smoke, setSmoke] = useState<SmokeState>({ phase: "idle" });
-  const [discover, setDiscover] = useState<DiscoverState>({ phase: "idle" });
-  const [scanPath, setScanPath] = useState<string>("~/projects");
-  const [scanDepth, setScanDepth] = useState<number>(2);
-  const [analyzeState, setAnalyzeState] = useState<AnalyzeState>({ phase: "idle" });
-  const [planState, setPlanState] = useState<PlanState>({ phase: "idle" });
+  const [defaults, setDefaults] = useState<PhaseSelections>(() =>
+    loadDefaults(window.localStorage),
+  );
+  const updateDefaults = (next: PhaseSelections): void => {
+    setDefaults(next);
+    saveDefaults(next, window.localStorage);
+  };
   const streamRef = useRef<{ close: () => void } | null>(null);
-  const discoverStreamRef = useRef<{ close: () => void } | null>(null);
-  const analyzeStreamRef = useRef<{ close: () => void } | null>(null);
-  const planStreamRef = useRef<{ close: () => void } | null>(null);
   const messageIdRef = useRef(0);
-  const analyzeMessageIdRef = useRef(0);
-  const planMessageIdRef = useRef(0);
 
   useEffect(() => {
     if (authState.phase === "ok" && chosenMode === null) {
@@ -163,9 +85,6 @@ export default function App() {
   useEffect(
     () => () => {
       streamRef.current?.close();
-      discoverStreamRef.current?.close();
-      analyzeStreamRef.current?.close();
-      planStreamRef.current?.close();
     },
     [],
   );
@@ -187,129 +106,6 @@ export default function App() {
     });
   };
 
-  const onScan = () => {
-    if (discover.phase === "scanning") return;
-    const path = scanPath.trim();
-    if (!path) return;
-    discoverStreamRef.current?.close();
-    setDiscover({ phase: "scanning", path, depth: scanDepth, elapsedMs: 0, repos: [] });
-    discoverStreamRef.current = api.streamDiscover(
-      { path, depth: scanDepth },
-      (event: DiscoverEvent) => {
-        setDiscover((prev) => reduceDiscover(prev, event));
-      },
-    );
-  };
-
-  const onAnalyze = (repo: DiscoveredRepo, userNotes?: string) => {
-    if (!chosenMode) return;
-    if (analyzeState.phase === "running") return;
-    analyzeStreamRef.current?.close();
-    planStreamRef.current?.close();
-    analyzeMessageIdRef.current = 0;
-    setAnalyzeState({
-      phase: "running",
-      repoPath: repo.path,
-      repoName: repo.name,
-      elapsedMs: 0,
-      messages: [],
-      ...(userNotes ? { previousNotes: userNotes } : {}),
-    });
-    // Re-analyzing invalidates any in-memory plan for this repo.
-    setPlanState({ phase: "idle" });
-    analyzeStreamRef.current = api.streamAnalyze(
-      { repoPath: repo.path, mode: chosenMode, userNotes },
-      (event: AnalyzeEvent) => {
-        setAnalyzeState((prev) =>
-          reduceAnalyze(prev, event, repo.name, () => ++analyzeMessageIdRef.current),
-        );
-      },
-    );
-  };
-
-  const onApprove = async () => {
-    if (analyzeState.phase !== "done") return;
-    try {
-      await api.approveProposal({
-        repoPath: analyzeState.repoPath,
-        proposalPath: analyzeState.proposalPath,
-      });
-      setAnalyzeState((prev) =>
-        prev.phase === "done" ? { ...prev, approvedAt: new Date().toISOString() } : prev,
-      );
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      // Surface failure inline via the existing error phase. Keep proposal visible.
-      setAnalyzeState((prev) =>
-        prev.phase === "done"
-          ? {
-              phase: "error",
-              repoPath: prev.repoPath,
-              repoName: prev.repoName,
-              message: `approve failed: ${message}`,
-              messages: prev.messages,
-            }
-          : prev,
-      );
-    }
-  };
-
-  const onCloseAnalyze = () => {
-    analyzeStreamRef.current?.close();
-    planStreamRef.current?.close();
-    setAnalyzeState({ phase: "idle" });
-    setPlanState({ phase: "idle" });
-  };
-
-  const onPlan = (repo: DiscoveredRepo, userNotes?: string) => {
-    if (!chosenMode) return;
-    if (planState.phase === "running") return;
-    planStreamRef.current?.close();
-    planMessageIdRef.current = 0;
-    setPlanState({
-      phase: "running",
-      repoPath: repo.path,
-      repoName: repo.name,
-      elapsedMs: 0,
-      messages: [],
-    });
-    planStreamRef.current = api.streamPlan(
-      { repoPath: repo.path, mode: chosenMode, userNotes },
-      (event: PlanEvent) => {
-        setPlanState((prev) =>
-          reducePlan(prev, event, repo.name, () => ++planMessageIdRef.current),
-        );
-      },
-    );
-  };
-
-  const onApprovePlan = async () => {
-    if (planState.phase !== "done") return;
-    try {
-      await api.approvePlan({
-        repoPath: planState.repoPath,
-        planPath: planState.planPath,
-        taskCount: planState.taskCount,
-      });
-      setPlanState((prev) =>
-        prev.phase === "done" ? { ...prev, approvedAt: new Date().toISOString() } : prev,
-      );
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      setPlanState((prev) =>
-        prev.phase === "done"
-          ? {
-              phase: "error",
-              repoPath: prev.repoPath,
-              repoName: prev.repoName,
-              message: `approve failed: ${message}`,
-              messages: prev.messages,
-            }
-          : prev,
-      );
-    }
-  };
-
   return (
     <div className="page">
       <header className="hdr">
@@ -323,6 +119,7 @@ export default function App() {
           <span className="hdr-meta-value">:3737 ⇄ :5173</span>
         </div>
       </header>
+      <Breadcrumbs crumbs={[{ label: "Home" }]} />
 
       <main className="grid">
         <section className="card card-auth">
@@ -340,10 +137,11 @@ export default function App() {
                 label="API key"
                 hint="pay-per-token via ANTHROPIC_API_KEY"
                 available={authState.data.apiKeyDetected}
-                unavailableHint="add ANTHROPIC_API_KEY to .env or your shell and restart the server"
+                unavailableHint="paste a key below — no server restart needed"
                 selected={chosenMode === "api"}
                 onSelect={onSelectMode}
               />
+              <ApiKeyEntry status={authState.data} onChanged={reloadAuth} />
               <ModeRow
                 mode="subscription"
                 label="Claude subscription"
@@ -378,10 +176,78 @@ export default function App() {
         <section className="card card-runs">
           <div className="card-head">
             <h2>Runs</h2>
-            <button className="btn btn-ghost" onClick={reloadRuns} aria-label="refresh runs">
-              refresh
-            </button>
+            <div className="card-head-actions">
+              {runsState.phase === "ok" &&
+                (() => {
+                  const finished = runsState.data.runs.filter(
+                    (r) => r.status === "completed" || r.status === "failed",
+                  );
+                  if (finished.length < 2) return null;
+                  if (confirmingClear) {
+                    return (
+                      <span className="run-clear-confirm">
+                        <span className="run-clear-confirm-label">
+                          Delete {finished.length} finished runs?
+                        </span>
+                        <button
+                          className="btn btn-danger btn-tight"
+                          onClick={() => {
+                            void Promise.allSettled(
+                              finished.map((r) => api.deleteRun(r.runId)),
+                            ).then((results) => {
+                              const failed = results.filter((r) => r.status === "rejected").length;
+                              setConfirmingClear(false);
+                              if (failed > 0) {
+                                setClearError(
+                                  `${failed} of ${finished.length} could not be deleted`,
+                                );
+                              } else {
+                                setClearError(null);
+                              }
+                              reloadRuns();
+                            });
+                          }}
+                        >
+                          Delete all
+                        </button>
+                        <button
+                          className="btn btn-ghost btn-tight"
+                          onClick={() => setConfirmingClear(false)}
+                        >
+                          Keep
+                        </button>
+                      </span>
+                    );
+                  }
+                  return (
+                    <button
+                      className="btn btn-ghost btn-tight"
+                      onClick={() => {
+                        setClearError(null);
+                        setConfirmingClear(true);
+                      }}
+                    >
+                      Clear finished ({finished.length})
+                    </button>
+                  );
+                })()}
+              <button
+                className="btn btn-primary btn-tight"
+                onClick={() => navigate("/runs/new")}
+                title="open the start-a-run form"
+              >
+                + Start new run
+              </button>
+              <button className="btn btn-ghost" onClick={reloadRuns} aria-label="refresh runs">
+                refresh
+              </button>
+            </div>
           </div>
+          {clearError && (
+            <p className="err" style={{ marginTop: 0 }}>
+              {clearError}
+            </p>
+          )}
           {runsState.phase === "loading" && <p className="muted">loading…</p>}
           {runsState.phase === "err" && <p className="err">failed: {runsState.error}</p>}
           {runsState.phase === "ok" && (
@@ -391,96 +257,110 @@ export default function App() {
                 <div className="empty">
                   <p className="empty-title">no runs yet</p>
                   <p className="empty-body">
-                    Once Phase 3+ lands, runs created by <code>agent run</code> will appear here.
+                    Click <strong>Start new run</strong> above to launch an orchestration run; it'll
+                    appear here once it's underway.
                   </p>
                 </div>
               ) : (
                 <ul className="runs">
-                  {runsState.data.runs.map((r) => (
-                    <li key={r.runId} className="run">
-                      <code className="run-id">{r.runId}</code>
-                      <span className={`pill pill-${r.status}`}>{r.status}</span>
-                      <span className="run-meta">
-                        {r.repoCount} repo{r.repoCount === 1 ? "" : "s"} · {r.tokensUsed.toLocaleString()} tok · {r.authMode}
-                      </span>
-                    </li>
-                  ))}
+                  {runsState.data.runs.map((r) => {
+                    const isActive = r.status === "running" || r.status === "stopping";
+                    const isConfirming = confirmingDelete === r.runId;
+                    return (
+                      <li key={r.runId} className="run">
+                        <button
+                          className="run-link"
+                          onClick={() => navigate(`/runs/${r.runId}`)}
+                          title="open run dashboard"
+                        >
+                          <code className="run-id">{r.runId}</code>
+                        </button>
+                        <span className={`pill pill-${r.status}`}>{r.status}</span>
+                        <span className="run-meta">
+                          <span>
+                            {r.repoCount} repo{r.repoCount === 1 ? "" : "s"}
+                          </span>
+                          <span>{r.tokensUsed.toLocaleString()} tok</span>
+                          <span>{r.authMode}</span>
+                        </span>
+                        {isConfirming ? (
+                          <span className="run-delete-confirm">
+                            <span
+                              className="run-delete-confirm-label"
+                              title="Removes this run's logs and manifest. Repo .agent state (proposals, plans, approvals) is untouched."
+                            >
+                              Delete run + logs?
+                            </span>
+                            <button
+                              className="btn btn-danger btn-tight"
+                              onClick={() => {
+                                setDeleteError(null);
+                                api
+                                  .deleteRun(r.runId)
+                                  .then(() => {
+                                    setConfirmingDelete(null);
+                                    reloadRuns();
+                                  })
+                                  .catch((err: unknown) => {
+                                    setConfirmingDelete(null);
+                                    setDeleteError(
+                                      err instanceof Error ? err.message : String(err),
+                                    );
+                                  });
+                              }}
+                            >
+                              Delete
+                            </button>
+                            <button
+                              className="btn btn-ghost btn-tight"
+                              onClick={() => setConfirmingDelete(null)}
+                            >
+                              Keep
+                            </button>
+                          </span>
+                        ) : (
+                          <button
+                            className="btn btn-ghost btn-tight run-delete-btn"
+                            aria-label="Delete run"
+                            title={
+                              isActive
+                                ? "Stop the run before deleting"
+                                : "Removes this run's logs and manifest. Repo .agent state (proposals, plans, approvals) is untouched."
+                            }
+                            disabled={isActive}
+                            onClick={() => {
+                              setDeleteError(null);
+                              setConfirmingDelete(r.runId);
+                            }}
+                          >
+                            ✕
+                          </button>
+                        )}
+                      </li>
+                    );
+                  })}
                 </ul>
+              )}
+              {deleteError && (
+                <p className="err" style={{ marginTop: 0 }}>
+                  {deleteError}
+                </p>
               )}
             </>
           )}
         </section>
 
-        <section className="card card-discover">
-          <div className="card-head">
-            <h2>Discover</h2>
-            <span className="card-sub">scan a directory for git repos</span>
-          </div>
-
-          <div className="scan-form">
-            <label className="field">
-              <span className="field-label">path</span>
-              <input
-                className="field-input"
-                type="text"
-                value={scanPath}
-                onChange={(e) => setScanPath(e.target.value)}
-                placeholder="~/projects"
-                spellCheck={false}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") onScan();
-                }}
-              />
-            </label>
-            <label className="field field-depth">
-              <span className="field-label">depth</span>
-              <select
-                className="field-input"
-                value={scanDepth}
-                onChange={(e) => setScanDepth(Number(e.target.value))}
-              >
-                {[1, 2, 3, 4, 5].map((n) => (
-                  <option key={n} value={n}>
-                    {n}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <button
-              className="btn btn-primary"
-              onClick={onScan}
-              disabled={discover.phase === "scanning" || scanPath.trim().length === 0}
-            >
-              {discover.phase === "scanning" ? "scanning…" : "Scan"}
-            </button>
-          </div>
-
-          <DiscoverReadout
-            discover={discover}
-            analyze={analyzeState}
-            plan={planState}
-            chosenMode={chosenMode}
-            onAnalyze={onAnalyze}
-            onApprove={onApprove}
-            onCloseAnalyze={onCloseAnalyze}
-            onPlan={onPlan}
-            onApprovePlan={onApprovePlan}
-          />
-        </section>
+        <DefaultsPanel value={defaults} onChange={updateDefaults} />
       </main>
 
       <footer className="ftr">
-        <span>v0.1 · auth · smoke · discover · sse</span>
+        <span>v0.1 · auth · smoke · runs · defaults</span>
       </footer>
     </div>
   );
 }
 
-function reduceSmoke(
-  prev: SmokeState,
-  event: SmokeEvent,
-  nextId: () => number,
-): SmokeState {
+function reduceSmoke(prev: SmokeState, event: SmokeEvent, nextId: () => number): SmokeState {
   switch (event.type) {
     case "started": {
       return { phase: "streaming", startedAt: event.ts, elapsedMs: 0, messages: [] };
@@ -519,6 +399,107 @@ function reduceSmoke(
   }
 }
 
+function ApiKeyEntry({ status, onChanged }: { status: AuthStatus; onChanged: () => void }) {
+  const [value, setValue] = useState("");
+  const [persist, setPersist] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const detected = status.apiKeyDetected;
+  const persisted = status.apiKeyPersisted ?? false;
+  const tooShort = value.trim().length < 20;
+
+  const save = async () => {
+    if (tooShort) {
+      setErr("That key looks too short.");
+      return;
+    }
+    setBusy(true);
+    setErr(null);
+    try {
+      await api.setApiKey(value.trim(), persist);
+      setValue(""); // never keep the secret in component state longer than needed
+      onChanged();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "failed to save key");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const forget = async () => {
+    setBusy(true);
+    setErr(null);
+    try {
+      await api.clearApiKey();
+      onChanged();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "failed to forget key");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (detected) {
+    return (
+      <div className="keybox keybox-active">
+        <span className="keybox-state">
+          <span className="dot dot-ok" aria-hidden />
+          {persisted ? "key saved · encrypted on this machine" : "key active · from environment"}
+        </span>
+        {persisted && (
+          <button className="btn btn-ghost btn-sm" onClick={forget} disabled={busy}>
+            {busy ? "…" : "Forget key"}
+          </button>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="keybox keybox-entry">
+      <div className="keybox-row">
+        <input
+          id="api-key-input"
+          type="password"
+          className="keybox-input"
+          placeholder="sk-ant-… paste your key"
+          value={value}
+          autoComplete="off"
+          spellCheck={false}
+          aria-label="Anthropic API key"
+          onChange={(e) => setValue(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") void save();
+          }}
+          disabled={busy}
+        />
+        <button
+          className="btn btn-primary btn-sm"
+          onClick={() => void save()}
+          disabled={busy || tooShort}
+        >
+          {busy ? "saving…" : "Save key"}
+        </button>
+      </div>
+      <label className="keybox-persist">
+        <input
+          type="checkbox"
+          checked={persist}
+          onChange={(e) => setPersist(e.target.checked)}
+          disabled={busy}
+        />
+        remember on this machine (encrypted, survives restart)
+      </label>
+      {err && <p className="err keybox-err">{err}</p>}
+      <p className="muted keybox-note">
+        Encrypted with a key derived from this machine — protects the file if it leaks off this box,
+        not from processes running as you.
+      </p>
+    </div>
+  );
+}
+
 function ModeRow(props: {
   mode: AuthMode;
   label: string;
@@ -541,7 +522,9 @@ function ModeRow(props: {
         <span className="mode-label">{props.label}</span>
         <span className="mode-hint">{props.available ? props.hint : props.unavailableHint}</span>
       </span>
-      <span className="mode-state">{props.available ? (props.selected ? "active" : "available") : "unset"}</span>
+      <span className="mode-state">
+        {props.available ? (props.selected ? "active" : "available") : "unset"}
+      </span>
     </button>
   );
 }
@@ -565,636 +548,6 @@ function ElapsedReadout({ smoke }: { smoke: SmokeState }) {
     return <span className="action-hint err">stream failed</span>;
   }
   return <span className="action-hint">sends one short prompt and shows live SDK events</span>;
-}
-
-function reduceDiscover(prev: DiscoverState, event: DiscoverEvent): DiscoverState {
-  switch (event.type) {
-    case "started": {
-      return {
-        phase: "scanning",
-        path: event.path,
-        depth: event.depth,
-        elapsedMs: 0,
-        repos: [],
-      };
-    }
-    case "progress": {
-      if (prev.phase !== "scanning") return prev;
-      return { ...prev, elapsedMs: event.durationMs };
-    }
-    case "repo": {
-      if (prev.phase === "scanning") {
-        return { ...prev, repos: [...prev.repos, event.repo] };
-      }
-      return prev;
-    }
-    case "done": {
-      if (prev.phase !== "scanning") return prev;
-      return {
-        phase: "done",
-        path: prev.path,
-        depth: prev.depth,
-        count: event.count,
-        durationMs: event.durationMs,
-        repos: prev.repos,
-      };
-    }
-    case "error": {
-      const repos = prev.phase === "scanning" ? prev.repos : [];
-      return { phase: "error", message: event.message, repos };
-    }
-  }
-}
-
-interface DiscoverReadoutProps {
-  discover: DiscoverState;
-  analyze: AnalyzeState;
-  plan: PlanState;
-  chosenMode: AuthMode | null;
-  onAnalyze: (repo: DiscoveredRepo, userNotes?: string) => void;
-  onApprove: () => void;
-  onCloseAnalyze: () => void;
-  onPlan: (repo: DiscoveredRepo, userNotes?: string) => void;
-  onApprovePlan: () => void;
-}
-
-function DiscoverReadout({
-  discover,
-  analyze,
-  plan,
-  chosenMode,
-  onAnalyze,
-  onApprove,
-  onCloseAnalyze,
-  onPlan,
-  onApprovePlan,
-}: DiscoverReadoutProps) {
-  if (discover.phase === "idle") {
-    return (
-      <p className="muted scan-empty">
-        scans for git repos under the path, captures stack + dirty + last commit per repo
-      </p>
-    );
-  }
-
-  const isScanning = discover.phase === "scanning";
-  const isErr = discover.phase === "error";
-
-  return (
-    <div className={`scan ${isScanning ? "scan-live" : isErr ? "scan-err" : "scan-done"}`}>
-      <div className="scan-head">
-        <span className="scan-label">
-          {isScanning ? (
-            <>
-              <span className="pulse" />
-              scanning · {(discover.elapsedMs / 1000).toFixed(1)}s · {discover.repos.length} found
-            </>
-          ) : isErr ? (
-            "scan failed"
-          ) : (
-            <>
-              {discover.count} repo{discover.count === 1 ? "" : "s"} ·{" "}
-              {(discover.durationMs / 1000).toFixed(1)}s
-            </>
-          )}
-        </span>
-        {!isErr && <span className="scan-meta">depth {discover.depth}</span>}
-      </div>
-
-      {discover.repos.length === 0 && isScanning && (
-        <div className="scan-empty-state">walking directory tree…</div>
-      )}
-
-      {discover.repos.length > 0 && (
-        <ul className="repos">
-          {discover.repos.map((repo) => {
-            const isActive = analyze.phase !== "idle" && analyze.repoPath === repo.path;
-            const otherRunning =
-              (analyze.phase === "running" && analyze.repoPath !== repo.path) ||
-              (plan.phase === "running" && plan.repoPath !== repo.path);
-            const repoPlan = plan.phase !== "idle" && plan.repoPath === repo.path ? plan : null;
-            return (
-              <RepoRow
-                key={repo.path}
-                repo={repo}
-                isActive={isActive}
-                disabled={!chosenMode || otherRunning}
-                onAnalyze={(notes) => onAnalyze(repo, notes)}
-                onApprove={onApprove}
-                analyze={isActive ? analyze : null}
-                plan={repoPlan}
-                onClose={onCloseAnalyze}
-                onPlan={(notes) => onPlan(repo, notes)}
-                onApprovePlan={onApprovePlan}
-                chosenMode={chosenMode}
-              />
-            );
-          })}
-        </ul>
-      )}
-
-      {isErr && <pre className="scan-err-body">{discover.message}</pre>}
-
-      {discover.repos.length === 0 && discover.phase === "done" && (
-        <div className="scan-empty-state">no git repos found at this depth</div>
-      )}
-    </div>
-  );
-}
-
-interface RepoRowProps {
-  repo: DiscoveredRepo;
-  isActive: boolean;
-  disabled: boolean;
-  onAnalyze: (userNotes?: string) => void;
-  onApprove: () => void;
-  onClose: () => void;
-  onPlan: (userNotes?: string) => void;
-  onApprovePlan: () => void;
-  analyze: AnalyzeState | null;
-  plan: PlanState | null;
-  chosenMode: AuthMode | null;
-}
-
-function RepoRow({
-  repo,
-  isActive,
-  disabled,
-  onAnalyze,
-  onApprove,
-  onClose,
-  onPlan,
-  onApprovePlan,
-  analyze,
-  plan,
-  chosenMode,
-}: RepoRowProps) {
-  const date = repo.lastCommitDate ? formatRelative(repo.lastCommitDate) : "no commits";
-  const buttonLabel = (() => {
-    if (isActive && analyze) {
-      if (analyze.phase === "running") return "analyzing…";
-      if (analyze.phase === "done") return "re-analyze";
-      if (analyze.phase === "error") return "retry";
-    }
-    return "Analyze";
-  })();
-  return (
-    <li className="repo-row">
-      <div className="repo-head">
-        <span className="repo-name">{repo.name}</span>
-        <span className={`repo-stack repo-stack-${repo.stack}`}>{repo.stack}</span>
-        {repo.isDirty && <span className="repo-flag repo-flag-dirty">dirty</span>}
-        <span className="repo-row-spacer" />
-        <button
-          className={`btn btn-row ${isActive ? "btn-row-on" : ""}`}
-          onClick={() => onAnalyze()}
-          disabled={disabled || (isActive && analyze?.phase === "running")}
-          title={!chosenMode ? "select an auth mode above first" : undefined}
-        >
-          {buttonLabel}
-        </button>
-      </div>
-      <div className="repo-path" title={repo.path}>
-        {repo.path}
-      </div>
-      <div className="repo-meta">
-        <span className={`repo-chip ${repo.hasReadme ? "repo-chip-on" : "repo-chip-off"}`}>
-          {repo.hasReadme ? "readme ✓" : "no readme"}
-        </span>
-        <span className={`repo-chip ${repo.hasTests ? "repo-chip-on" : "repo-chip-off"}`}>
-          {repo.hasTests ? "tests ✓" : "no tests"}
-        </span>
-        <span className="repo-chip">{date}</span>
-      </div>
-      {isActive && analyze && analyze.phase !== "idle" && (
-        <AnalyzePanel
-          analyze={analyze}
-          plan={plan}
-          onClose={onClose}
-          onReanalyze={(notes) => onAnalyze(notes)}
-          onApprove={onApprove}
-          onPlan={(notes) => onPlan(notes)}
-          onApprovePlan={onApprovePlan}
-        />
-      )}
-    </li>
-  );
-}
-
-interface AnalyzePanelProps {
-  analyze: AnalyzeState;
-  plan: PlanState | null;
-  onClose: () => void;
-  onReanalyze: (userNotes?: string) => void;
-  onApprove: () => void;
-  onPlan: (userNotes?: string) => void;
-  onApprovePlan: () => void;
-}
-
-function AnalyzePanel({
-  analyze,
-  plan,
-  onClose,
-  onReanalyze,
-  onApprove,
-  onPlan,
-  onApprovePlan,
-}: AnalyzePanelProps) {
-  const [notes, setNotes] = useState<string>("");
-  if (analyze.phase === "idle") return null;
-  const isRunning = analyze.phase === "running";
-  const isErr = analyze.phase === "error";
-  const isDone = analyze.phase === "done";
-  const isApproved = isDone && analyze.approvedAt !== null;
-
-  const headerLabel = isApproved ? (
-    "approved"
-  ) : isRunning ? (
-    <>
-      <span className="pulse" />
-      analyzing · {(analyze.elapsedMs / 1000).toFixed(1)}s
-    </>
-  ) : isErr ? (
-    "analyze failed"
-  ) : (
-    <>
-      proposal · {(analyze.durationMs / 1000).toFixed(1)}s · {analyze.tokensUsed.toLocaleString()} tok
-    </>
-  );
-
-  return (
-    <div
-      className={`analyze ${
-        isApproved
-          ? "analyze-approved"
-          : isRunning
-            ? "analyze-live"
-            : isErr
-              ? "analyze-err"
-              : "analyze-done"
-      }`}
-    >
-      <div className="analyze-head">
-        <span className="analyze-label">{headerLabel}</span>
-        <button className="btn btn-ghost btn-tight" onClick={onClose}>
-          close
-        </button>
-      </div>
-
-      {analyze.messages.length > 0 && (
-        <ul className="stream-log analyze-log">
-          {analyze.messages.map((m) => (
-            <li key={m.id} className="stream-row">
-              <span className={`stream-pill stream-pill-${m.subtype}`}>{m.subtype}</span>
-              <span className="stream-summary">{m.summary || <em className="muted">·</em>}</span>
-            </li>
-          ))}
-        </ul>
-      )}
-
-      {isRunning && analyze.messages.length === 0 && (
-        <div className="stream-empty">waiting for first SDK message…</div>
-      )}
-
-      {isDone && (
-        <div className="proposal">
-          <div className="proposal-head">
-            <span className="proposal-label">completion-proposal.md</span>
-            <span className="proposal-path" title={analyze.proposalPath}>
-              {analyze.proposalPath}
-            </span>
-          </div>
-          <pre className="proposal-body">{analyze.proposalMarkdown}</pre>
-
-          {!isApproved && (
-            <div className="proposal-feedback">
-              <label className="field">
-                <span className="field-label">your reply to the analyzer</span>
-                <textarea
-                  className="field-input field-textarea"
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  placeholder="answer the open questions, correct misunderstandings, narrow scope — the analyzer will refine the proposal using these"
-                  rows={4}
-                  spellCheck
-                />
-              </label>
-              <div className="proposal-actions">
-                <button
-                  className="btn btn-primary"
-                  onClick={() => onReanalyze(notes.trim() || undefined)}
-                  disabled={notes.trim().length === 0}
-                  title={
-                    notes.trim().length === 0
-                      ? "type a reply above to submit it to the analyzer"
-                      : "send your reply back to the analyzer to refine the proposal"
-                  }
-                >
-                  Submit notes / answers
-                </button>
-                <button
-                  className="btn btn-ghost btn-approve"
-                  onClick={onApprove}
-                  title={
-                    notes.trim().length > 0
-                      ? `proceeds with the current proposal — your ${notes.trim().length} chars of notes will NOT be sent to the analyzer or saved`
-                      : "lock in the current proposal as-is, move on to the planner phase"
-                  }
-                >
-                  Approve as-is
-                </button>
-              </div>
-              {notes.trim().length > 0 && (
-                <p className="proposal-hint">
-                  Heads up: <strong>Approve as-is</strong> will discard the {notes.trim().length}{" "}
-                  characters in the box above.
-                </p>
-              )}
-            </div>
-          )}
-
-          {isApproved && analyze.approvedAt && (
-            <div className="approved-banner">
-              <span className="approved-mark">✓</span>
-              <span>proposal approved {formatRelative(analyze.approvedAt)}</span>
-            </div>
-          )}
-        </div>
-      )}
-
-      {isApproved && (
-        <PlanPanel plan={plan} onPlan={onPlan} onApprovePlan={onApprovePlan} />
-      )}
-
-      {isErr && <pre className="scan-err-body">{analyze.message}</pre>}
-    </div>
-  );
-}
-
-interface PlanPanelProps {
-  plan: PlanState | null;
-  onPlan: (userNotes?: string) => void;
-  onApprovePlan: () => void;
-}
-
-function PlanPanel({ plan, onPlan, onApprovePlan }: PlanPanelProps) {
-  const [notes, setNotes] = useState<string>("");
-  const isRunning = plan?.phase === "running";
-  const isErr = plan?.phase === "error";
-  const isDone = plan?.phase === "done";
-  const isApproved = isDone && plan.approvedAt !== null;
-  const isIdle = !plan || plan.phase === "idle";
-
-  const headerLabel = isIdle ? (
-    "planner — break the proposal into committable tasks"
-  ) : isApproved ? (
-    "plan approved"
-  ) : isRunning ? (
-    <>
-      <span className="pulse" />
-      planning · {(plan.elapsedMs / 1000).toFixed(1)}s
-    </>
-  ) : isErr ? (
-    "plan failed"
-  ) : isDone ? (
-    <>
-      plan · {plan.taskCount} task{plan.taskCount === 1 ? "" : "s"} ·{" "}
-      {(plan.durationMs / 1000).toFixed(1)}s · {plan.tokensUsed.toLocaleString()} tok
-    </>
-  ) : null;
-
-  const panelClass = isApproved
-    ? "plan plan-approved"
-    : isRunning
-      ? "plan plan-live"
-      : isErr
-        ? "plan plan-err"
-        : isDone
-          ? "plan plan-done"
-          : "plan plan-idle";
-
-  return (
-    <div className={panelClass}>
-      <div className="plan-head">
-        <span className="plan-label">{headerLabel}</span>
-        {isIdle && (
-          <button className="btn btn-primary btn-tight" onClick={() => onPlan()}>
-            Generate plan
-          </button>
-        )}
-      </div>
-
-      {plan && plan.phase !== "idle" && plan.messages.length > 0 && (
-        <ul className="stream-log analyze-log">
-          {plan.messages.map((m) => (
-            <li key={m.id} className="stream-row">
-              <span className={`stream-pill stream-pill-${m.subtype}`}>{m.subtype}</span>
-              <span className="stream-summary">{m.summary || <em className="muted">·</em>}</span>
-            </li>
-          ))}
-        </ul>
-      )}
-
-      {isRunning && plan.messages.length === 0 && (
-        <div className="stream-empty">waiting for first SDK message…</div>
-      )}
-
-      {isDone && (
-        <div className="proposal">
-          <div className="proposal-head">
-            <span className="proposal-label">plan.md</span>
-            <span className="proposal-path" title={plan.planPath}>
-              {plan.planPath}
-            </span>
-          </div>
-          <pre className="proposal-body">{plan.planMarkdown}</pre>
-
-          {!isApproved && (
-            <div className="proposal-feedback">
-              <label className="field">
-                <span className="field-label">your reply to the planner</span>
-                <textarea
-                  className="field-input field-textarea"
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  placeholder="re-shape the task list — split, merge, reorder, add acceptance criteria. The planner will refine the plan and preserve unchanged task IDs."
-                  rows={4}
-                  spellCheck
-                />
-              </label>
-              <div className="proposal-actions">
-                <button
-                  className="btn btn-primary"
-                  onClick={() => onPlan(notes.trim() || undefined)}
-                  disabled={notes.trim().length === 0}
-                  title={
-                    notes.trim().length === 0
-                      ? "type a reply above to submit it to the planner"
-                      : "send your reply back to the planner to refine the task list"
-                  }
-                >
-                  Submit notes / answers
-                </button>
-                <button
-                  className="btn btn-ghost btn-approve"
-                  onClick={onApprovePlan}
-                  title={
-                    notes.trim().length > 0
-                      ? `proceeds with the current plan — your ${notes.trim().length} chars of notes will NOT be sent to the planner or saved`
-                      : "lock in the current plan, ready for the executor phase"
-                  }
-                >
-                  Approve plan
-                </button>
-              </div>
-              {notes.trim().length > 0 && (
-                <p className="proposal-hint">
-                  Heads up: <strong>Approve plan</strong> will discard the {notes.trim().length}{" "}
-                  characters in the box above.
-                </p>
-              )}
-            </div>
-          )}
-
-          {isApproved && plan.approvedAt && (
-            <div className="approved-banner">
-              <span className="approved-mark">✓</span>
-              <span>
-                plan approved {formatRelative(plan.approvedAt)} · {plan.taskCount} task
-                {plan.taskCount === 1 ? "" : "s"} queued for executor phase
-              </span>
-            </div>
-          )}
-        </div>
-      )}
-
-      {isErr && plan && <pre className="scan-err-body">{plan.message}</pre>}
-    </div>
-  );
-}
-
-function reducePlan(
-  prev: PlanState,
-  event: PlanEvent,
-  repoName: string,
-  nextId: () => number,
-): PlanState {
-  switch (event.type) {
-    case "started": {
-      return {
-        phase: "running",
-        repoPath: event.repoPath,
-        repoName: event.repoName,
-        elapsedMs: 0,
-        messages: [],
-      };
-    }
-    case "progress": {
-      if (prev.phase !== "running") return prev;
-      return { ...prev, elapsedMs: event.durationMs };
-    }
-    case "sdk_message": {
-      if (prev.phase !== "running") return prev;
-      const entry: MessageEntry = {
-        id: nextId(),
-        subtype: event.subtype,
-        summary: event.summary,
-        ts: event.ts,
-      };
-      return { ...prev, messages: [...prev.messages, entry] };
-    }
-    case "done": {
-      if (prev.phase !== "running") return prev;
-      return {
-        phase: "done",
-        repoPath: prev.repoPath,
-        repoName: prev.repoName,
-        messages: prev.messages,
-        planPath: event.planPath,
-        planMarkdown: event.planMarkdown,
-        taskCount: event.taskCount,
-        estimatedTokens: event.estimatedTokens,
-        estimatedDurationMs: event.estimatedDurationMs,
-        tokensUsed: event.tokensUsed,
-        durationMs: event.durationMs,
-        approvedAt: null,
-      };
-    }
-    case "error": {
-      const messages = prev.phase === "running" ? prev.messages : [];
-      const repoPath = prev.phase !== "idle" ? prev.repoPath : "";
-      return { phase: "error", repoPath, repoName, message: event.message, messages };
-    }
-  }
-}
-
-function reduceAnalyze(
-  prev: AnalyzeState,
-  event: AnalyzeEvent,
-  repoName: string,
-  nextId: () => number,
-): AnalyzeState {
-  switch (event.type) {
-    case "started": {
-      return {
-        phase: "running",
-        repoPath: event.repoPath,
-        repoName: event.repoName,
-        elapsedMs: 0,
-        messages: [],
-      };
-    }
-    case "progress": {
-      if (prev.phase !== "running") return prev;
-      return { ...prev, elapsedMs: event.durationMs };
-    }
-    case "sdk_message": {
-      if (prev.phase !== "running") return prev;
-      const entry: MessageEntry = {
-        id: nextId(),
-        subtype: event.subtype,
-        summary: event.summary,
-        ts: event.ts,
-      };
-      return { ...prev, messages: [...prev.messages, entry] };
-    }
-    case "done": {
-      if (prev.phase !== "running") return prev;
-      return {
-        phase: "done",
-        repoPath: prev.repoPath,
-        repoName: prev.repoName,
-        messages: prev.messages,
-        proposalPath: event.proposalPath,
-        proposalMarkdown: event.proposalMarkdown,
-        tokensUsed: event.tokensUsed,
-        durationMs: event.durationMs,
-        approvedAt: null,
-      };
-    }
-    case "error": {
-      const messages = prev.phase === "running" ? prev.messages : [];
-      const repoPath = prev.phase !== "idle" ? prev.repoPath : "";
-      return { phase: "error", repoPath, repoName, message: event.message, messages };
-    }
-  }
-}
-
-function formatRelative(iso: string): string {
-  const t = new Date(iso).getTime();
-  if (Number.isNaN(t)) return iso;
-  const diffMs = Date.now() - t;
-  const sec = Math.floor(diffMs / 1000);
-  if (sec < 60) return "just now";
-  const min = Math.floor(sec / 60);
-  if (min < 60) return `${min}m ago`;
-  const hr = Math.floor(min / 60);
-  if (hr < 24) return `${hr}h ago`;
-  const day = Math.floor(hr / 24);
-  if (day < 30) return `${day}d ago`;
-  const mo = Math.floor(day / 30);
-  if (mo < 12) return `${mo}mo ago`;
-  return `${Math.floor(mo / 12)}y ago`;
 }
 
 function SmokeStream({ smoke }: { smoke: SmokeState }) {

@@ -16,6 +16,7 @@
     "dev:ui": "concurrently -n server,vite -c blue,magenta \"pnpm dev:server\" \"pnpm --prefix ui dev\"",
     "ui:install": "pnpm --prefix ui install",
     "typecheck": "tsc --noEmit",
+    "typecheck:ui": "tsc -p ui/tsconfig.json --noEmit",
     "lint": "eslint .",
     "format": "prettier --write .",
     "test": "vitest run",
@@ -28,6 +29,7 @@
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.2.118",
+    "@inquirer/prompts": "8.4.3",
     "commander": "^12.1.0",
     "simple-git": "^3.27.0",
     "ulid": "^2.3.0",

@@ -1,11 +1,9 @@
 import type { TaskState } from "../types.js";
 
-const TASK_BLOCK_RE =
-  /###\s+task:\s+([0-9a-fA-F-]+)\s*\n([\s\S]*?)(?=\n###\s+task:|\n##\s|\n*$)/g;
+const TASK_BLOCK_RE = /###\s+task:\s+([0-9a-fA-F-]+)\s*\n([\s\S]*?)(?=\n###\s+task:|\n##\s|\n*$)/g;
 const TITLE_RE = /\*\*Title:\*\*\s+(.+)/;
 const CRITERIA_RE = /\*\*Acceptance criteria:\*\*\s*\n((?:\s*-\s+.+\n?)+)/;
-const UUID_RE =
-  /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+const UUID_RE = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
 
 export function parsePlan(markdown: string): TaskState[] {
   const tasks: TaskState[] = [];
