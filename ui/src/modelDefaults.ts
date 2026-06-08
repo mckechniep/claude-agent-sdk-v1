@@ -6,7 +6,7 @@ import {
   type PhaseSelection,
   type PhaseSelections,
 } from "./modelConfig";
-import type { ModelId } from "./runTypes";
+import type { EffortLevel, ModelId } from "./runTypes";
 
 export interface StorageLike {
   getItem(key: string): string | null;
@@ -57,4 +57,12 @@ export function loadDefaults(storage: StorageLike): PhaseSelections {
 
 export function saveDefaults(sel: PhaseSelections, storage: StorageLike): void {
   storage.setItem(KEY, JSON.stringify(sel));
+}
+
+/** Map a phase selection to the analyze/plan request override, dropping the
+ *  "default" effort sentinel (which means "let the model decide"). */
+export function buildPhaseOverride(sel: PhaseSelection): { model: ModelId; effort?: EffortLevel } {
+  return sel.effort === "default"
+    ? { model: sel.model }
+    : { model: sel.model, effort: sel.effort };
 }

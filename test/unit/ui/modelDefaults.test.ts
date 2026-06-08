@@ -3,6 +3,7 @@ import {
   loadDefaults,
   saveDefaults,
   defaultsOrFallback,
+  buildPhaseOverride,
   type StorageLike,
 } from "../../../ui/src/modelDefaults";
 import { recommendedSelections } from "../../../ui/src/modelConfig";
@@ -51,5 +52,20 @@ describe("modelDefaults", () => {
     expect(loadDefaults(fakeStorage({ "agent-orch:model-defaults": "{oops" }))).toEqual(
       recommendedSelections(),
     );
+  });
+});
+
+describe("buildPhaseOverride", () => {
+  it("omits effort when it is the model default", () => {
+    expect(buildPhaseOverride({ model: "claude-sonnet-4-6", effort: "default" })).toEqual({
+      model: "claude-sonnet-4-6",
+    });
+  });
+
+  it("includes effort when it is an explicit level", () => {
+    expect(buildPhaseOverride({ model: "claude-opus-4-8", effort: "high" })).toEqual({
+      model: "claude-opus-4-8",
+      effort: "high",
+    });
   });
 });
