@@ -44,8 +44,11 @@ const DiscoveredRepoSchema = z.object({
   hasTests: z.boolean(),
   lastCommitDate: z.string().nullable(),
   isDirty: z.boolean(),
-  // Optional: UI sends these when it knows the prior approval state. Older UI
-  // builds that don't include them still validate correctly (Zod strips them).
+  // Optional: branch info + prior-approval flags. Older UI builds that omit
+  // them still validate correctly (Zod strips unknown / treats absent as
+  // undefined). currentBranch/localBranches drive the base-branch picker.
+  currentBranch: z.string().optional(),
+  localBranches: z.array(z.string()).optional(),
   hasApprovedProposal: z.boolean().optional(),
   hasApprovedPlan: z.boolean().optional(),
 });
@@ -185,6 +188,8 @@ export async function handleStartRun(payload: unknown, deps: ServerDeps): Promis
       selectedRepos: selectedRepos.map((r) => ({
         ...r,
         stack: r.stack as StackId,
+        currentBranch: r.currentBranch ?? "",
+        localBranches: r.localBranches ?? [],
         hasApprovedProposal: r.hasApprovedProposal ?? false,
         hasApprovedPlan: r.hasApprovedPlan ?? false,
       })),

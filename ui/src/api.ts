@@ -52,6 +52,12 @@ export interface DiscoveredRepo {
   hasTests: boolean;
   lastCommitDate: string | null;
   isDirty: boolean;
+  // Local branches + current branch, from the discover stream. Drives the
+  // per-repo base-branch picker on the run surface.
+  currentBranch: string;
+  localBranches: string[];
+  // The chosen base branch, attached by the run surface before startRun.
+  baseBranch?: string;
   // Prior orchestrator state from the repo's .agent/ directory (validity-
   // checked server-side). Approved repos skip the corresponding phases when
   // a run starts.

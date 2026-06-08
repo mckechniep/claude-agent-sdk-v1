@@ -67,6 +67,16 @@ describe("discoverRepos", () => {
     expect(repos.map((r) => r.name)).toEqual(["alpha"]);
   });
 
+  it("reports current branch and local branches", async () => {
+    const dir = await makeGitRepo(root, "alpha", { "package.json": "{}" });
+    await simpleGit(dir).checkoutLocalBranch("feature/x");
+    const repos = await discoverRepos({ targetDir: root, depth: 2 });
+    const r = repos[0]!;
+    expect(r.currentBranch).toBe("feature/x");
+    expect(r.localBranches).toContain("feature/x");
+    expect(r.localBranches).toContain(r.currentBranch);
+  });
+
   it("reports hasReadme and hasTests flags", async () => {
     await makeGitRepo(root, "alpha", { "README.md": "# x", "package.json": "{}" });
     await mkdir(join(root, "alpha", "test"), { recursive: true });
